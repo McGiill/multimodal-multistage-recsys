@@ -1,0 +1,43 @@
+seed: 42
+
+strategy: multistage      # multistage | two_tower_only | popularity | recency  (strategies/registry)
+
+candidate:
+  embedding_dim: 64
+  n_candidates: 300
+  negative_ratio: 4       # 랜덤 네거티브 1:4
+  history_len: 20
+  epochs: 5
+  lr: 0.001
+  batch_size: 1024
+  faiss_index_type: hnsw
+
+ranking:
+  model: deepfm           # deepfm | wide_deep
+  embedding_dim: 16
+  dnn_hidden: [256, 128]
+  dropout: 0.2
+  epochs: 5
+  lr: 0.001
+  batch_size: 2048
+
+session:
+  encoder: gru            # gru | transformer
+  hidden_dim: 64
+  max_len: 10
+  long_short_alpha: 0.6   # final = alpha*long(user tower) + (1-alpha)*short(session)
+
+reranking:
+  max_same_category_run: 2          # 동일 카테고리 연속 3개 이상 금지
+  cold_start_min_events: 5          # 이력 5개 미만 → 인기+트렌딩 대체
+  new_item_days: 7
+  new_item_min_slots: 1
+  mab:
+    algorithm: epsilon_greedy       # epsilon_greedy | ucb | thompson
+    epsilon: 0.1
+    ucb_c: 2.0
+    exploration_slots: [1, 2]
+
+default_top_n: 10
+paths:
+  model_dir: artifacts/models

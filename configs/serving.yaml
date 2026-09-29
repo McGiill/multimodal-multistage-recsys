@@ -1,0 +1,9 @@
+redis:
+  recent_views_len: 20
+  session_ttl_sec: 1800
+  maxmemory_policy: allkeys-lru
+latency_budget_ms:
+  search: 200
+  recommend: 200
+  candidate: 100
+  feature_lookup: 10

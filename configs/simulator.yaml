@@ -1,0 +1,40 @@
+seed: 42
+
+scale:                      # 리소스 부족 시 dev 규모로 downscale (예: 10_000 / 2_000 / 200_000)
+  n_products: 50000
+  n_users: 10000
+  n_events: 1000000
+
+period:
+  start_date: "2026-01-01"
+  days: 90
+
+# 페르소나 비율 (합 = 1.0)
+persona_ratio:
+  trendsetter: 0.15
+  pragmatist: 0.20
+  bargain_hunter: 0.20
+  brand_loyal: 0.15
+  impulse_buyer: 0.15
+  careful_explorer: 0.15
+
+# 페르소나별 행동 특성 (TODO: Retailrocket 데이터로 교정)
+persona_params:
+  trendsetter:      {preferred_l1: ["아우터", "상의"], price_sensitivity: 0.3, conversion_rate: 0.04, new_item_affinity: 0.8}
+  pragmatist:       {preferred_l1: ["하의", "상의"],   price_sensitivity: 0.5, conversion_rate: 0.03, new_item_affinity: 0.3}
+  bargain_hunter:   {preferred_l1: ["상의", "신발"],   price_sensitivity: 0.9, conversion_rate: 0.025, new_item_affinity: 0.2}
+  brand_loyal:      {preferred_l1: ["신발", "가방"],   price_sensitivity: 0.2, conversion_rate: 0.05, new_item_affinity: 0.4}
+  impulse_buyer:    {preferred_l1: ["액세서리", "상의"], price_sensitivity: 0.4, conversion_rate: 0.08, new_item_affinity: 0.6}
+  careful_explorer: {preferred_l1: ["아우터", "하의"], price_sensitivity: 0.6, conversion_rate: 0.015, new_item_affinity: 0.3}
+
+# 이벤트 전이 확률 (Markov Chain) — 행 합 = 1.0
+transition:
+  search:   {view: 0.70, search: 0.20, exit: 0.10}
+  view:     {view: 0.55, cart: 0.10, search: 0.15, exit: 0.20}
+  cart:     {purchase: 0.35, view: 0.40, exit: 0.25}
+  purchase: {view: 0.30, exit: 0.70}
+
+category_tree_path: configs/category_tree.yaml
+
+stream:                     # docker 실시간 로그 생성
+  events_per_sec: 20

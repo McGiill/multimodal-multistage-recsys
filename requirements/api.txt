@@ -1,0 +1,10 @@
+-r base.txt
+fastapi>=0.110
+uvicorn[standard]>=0.27
+python-multipart>=0.0.9
+redis>=5.0
+torch>=2.0
+transformers>=4.38
+faiss-cpu>=1.7.4
+pillow>=10.0
+rank-bm25>=0.2.2

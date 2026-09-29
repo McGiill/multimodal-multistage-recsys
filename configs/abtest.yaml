@@ -1,0 +1,8 @@
+seed: 42
+days: 30
+n_users_per_group: 5000
+groups:
+  control: popularity
+  treatment: multistage
+test: z_test              # z_test | chi_square
+alpha: 0.05

@@ -1,0 +1,38 @@
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    command: ["redis-server", "--maxmemory", "1gb", "--maxmemory-policy", "allkeys-lru"]
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 5
+
+  api:
+    build: { context: ., dockerfile: docker/api.Dockerfile }
+    container_name: api-server
+    env_file: [.env]
+    ports: ["8000:8000"]
+    volumes:
+      - ./artifacts:/app/artifacts
+      - ./data:/app/data
+    depends_on:
+      redis: { condition: service_healthy }
+    mem_limit: 4g
+
+  dashboard:
+    build: { context: ., dockerfile: docker/dashboard.Dockerfile }
+    container_name: dashboard
+    env_file: [.env]
+    ports: ["8501:8501"]
+    volumes:
+      - ./artifacts:/app/artifacts:ro
+      - ./docs:/app/docs:ro
+    depends_on: [api]
+
+  simulator:
+    build: { context: ., dockerfile: docker/simulator.Dockerfile }
+    container_name: simulator
+    env_file: [.env]
+    depends_on: [api]

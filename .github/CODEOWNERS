@@ -1,0 +1,16 @@
+# TODO: @github-id 를 팀원 아이디로 교체
+/src/common/          @A @B @C @D
+/src/simulator/       @A
+/src/evaluation/      @A
+/src/search/          @B
+/src/recommendation/candidate/ @C
+/src/recommendation/ranking/   @C
+/src/recommendation/session/   @C
+/src/recommendation/reranking/ @D
+/src/recommendation/strategies/ @D
+/src/serving/         @D
+/src/abtest/          @D
+/src/ct/              @D
+/dashboard/           @D
+/docker/              @D
+/docker-compose.yml   @D

@@ -1,0 +1,10 @@
+monitor:
+  interval_sec: 3600
+  thresholds:
+    hitrate_at_50: 0.20
+    ctr: 0.02
+retrain:
+  new_log_trigger: 10000
+registry:
+  dir: artifacts/models
+  keep_last: 5

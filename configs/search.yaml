@@ -1,0 +1,18 @@
+seed: 42
+clip:
+  model_name: openai/clip-vit-base-patch32
+  batch_size: 32
+  device: cpu
+index:
+  type: ivfpq            # ivfpq | hnsw
+  nlist: 256
+  m: 16                  # PQ sub-quantizers
+  nbits: 8
+  nprobe: 16
+  hnsw_m: 32
+hybrid:
+  text_weight: 0.5       # score = w*text + (1-w)*image
+default_top_k: 10
+paths:
+  index: artifacts/indexes/search_clip.index
+  id_map: artifacts/indexes/search_id_map.parquet
