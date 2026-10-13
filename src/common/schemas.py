@@ -42,7 +42,7 @@ class Product(BaseModel):
     category_l3: str                     # 소분류 (예: 라운드넥 니트)
     brand: str
     color: str
-    price: int                           # 원 단위
+    price: float                         # 달러 (H&M 최빈 거래가 × 590)
     image_path: str | None = None        # data/raw/images/... 기준 상대 경로
     created_at: datetime                 # 신규 상품(7일 이내) 판단용
     popularity: float = 0.0
@@ -80,14 +80,14 @@ class SearchResultItem(BaseModel):
     product_id: str
     name: str
     score: float
-    price: int
+    price: float                         # 달러
 
 
 class SearchResponse(BaseModel):
     search_type: SearchType
     results: list[SearchResultItem]
     latency_ms: float
-    total_count: int
+    total_count: int                     # FAISS 후보 풀에서 찾은 전체 결과 수 (≥ len(results))
 
 
 # ---------------------------------------------------------------------------
