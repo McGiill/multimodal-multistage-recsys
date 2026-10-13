@@ -1,18 +1,46 @@
 seed: 42
+
 clip:
-  model_name: openai/clip-vit-base-patch32
+  model_name: openai/clip-vit-base-patch32   # 모델을 바꾸면 인덱스는 모델별 폴더에 따로 저장됨
   batch_size: 32
-  device: cpu
+  index_device: auto      # 인덱스 구축용: auto | cpu | cuda | mps
+  serve_device: cpu       # API 서빙용 (과제 응답시간 기준은 CPU)
+  pad_to_square: true     # 세로로 긴 상품 이미지를 흰 여백으로 정사각형을 만든 뒤 인코딩
+                          # (false면 CLIP 기본 전처리: 짧은 변 기준 center crop → 위아래가 잘림)
+
 index:
-  type: ivfpq            # ivfpq | hnsw
-  nlist: 256
-  m: 16                  # PQ sub-quantizers
+  type: hnsw              # hnsw | ivfpq | ivfflat | flat
+  nlist: 256              # IVF 클러스터 수
+  m: 16                   # PQ sub-quantizer 수 (512차원 → 32차원씩)
   nbits: 8
-  nprobe: 16
+  nprobe: 16              # IVF 검색 시 탐색할 클러스터 수
   hnsw_m: 32
+  ef_construction: 200
+  ef_search: 128
+
+retrieval:
+  candidate_k: 200        # 인덱스마다 가져오는 후보 수 (정밀 재채점 전)
+
+text_query:
+  image_weight: 0.2       # 텍스트 검색 점수 = w * (텍스트→상품 이미지) + (1-w) * (텍스트→상품 텍스트)
+                          # valid 쿼리로 0~1 탐색해 결정 (0.2가 최고, 2026-10-11)
+
 hybrid:
-  text_weight: 0.5       # score = w*text + (1-w)*image
+  text_weight: 0.5        # 하이브리드 점수 = w * 텍스트 경로 + (1-w) * 이미지 경로 (valid 탐색 결과 0.5)
+
 default_top_k: 10
+
 paths:
-  index: artifacts/indexes/search_clip.index
-  id_map: artifacts/indexes/search_id_map.parquet
+  catalog: data/processed/products.parquet
+  image_root: data/raw/hm             # 카탈로그 image_path의 기준 폴더
+  articles: data/raw/hm/articles.csv  # 평가셋 생성 시 카탈로그 밖 상품(이미지 쿼리용)을 찾는 데 사용
+  index_dir: artifacts/indexes/search # 하위에 모델 이름별 폴더가 생김
+  eval_set: data/processed/search_eval.parquet
+  metrics_dir: artifacts/metrics
+
+eval:
+  k: 10
+  mrr_min_grade: 1        # MRR은 관련도가 이 값 이상인 첫 결과의 순위로 계산
+  n_text_queries: 1000    # 절반은 상품명 쿼리, 절반은 속성 쿼리
+  n_image_queries: 1000
+  n_hybrid_queries: 500

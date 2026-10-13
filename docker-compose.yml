@@ -17,6 +17,7 @@ services:
     volumes:
       - ./artifacts:/app/artifacts
       - ./data:/app/data
+      - hf_cache:/root/.cache/huggingface   # CLIP 가중치는 처음 한 번만 받고 재사용
     depends_on:
       redis: { condition: service_healthy }
     mem_limit: 4g
@@ -36,3 +37,6 @@ services:
     container_name: simulator
     env_file: [.env]
     depends_on: [api]
+
+volumes:
+  hf_cache:
