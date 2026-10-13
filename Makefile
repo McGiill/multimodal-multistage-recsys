@@ -1,7 +1,10 @@
-.PHONY: install data split train index eval bench up down test lint
+.PHONY: install catalog data split train index search-eval-set eval-search eval bench up down test lint
 
 install:        ## 로컬 개발 환경 설치
 	pip install -r requirements/dev.txt
+
+catalog:        ## H&M 원본 → 팀 공통 상품 카탈로그 (data/processed/products.parquet)
+	python -m src.data.build_catalog
 
 data:           ## 시뮬레이터로 상품/유저/로그 생성
 	python -m src.simulator.run

@@ -1,0 +1,75 @@
+# 팀 공통 상품 카탈로그 (H&M 원본 → data/processed/products.parquet)
+# 검색 인덱스, 추천, 시뮬레이터가 모두 이 카탈로그 하나를 상품 목록으로 쓴다.
+seed: 42
+n_products: 50000          # 과제 규격. 개발 중에는 --n 2000 처럼 줄여서 실행
+min_purchases: 1           # 거래가 이 횟수 이상인 상품만 (실제 거래가로 가격을 매길 수 있는 상품)
+
+price:                     # 상품 가격 = 최빈 거래가 × denominator (달러, 중앙값 약 14.99)
+  denominator: 590         # H&M 거래가(0.00002~0.59) = 실제 가격 ÷ 590 → ×590 하면 9.99, 19.99 같은 가격표 숫자
+                           # 통화 단위는 데이터에 없음. 원화 환산(환율)은 나중에 결정
+
+created_at:                # 상품 등록일 (H&M에 없음 → 임의 생성, 같은 디자인(product_code)은 같은 날)
+  reference_date: "2026-03-31"            # "오늘" = 시뮬레이션 로그 마지막 날 (simulator.yaml period와 맞출 것)
+  new_ratio: 0.05                         # 브랜드마다 상품의 5%를 신규 상품으로
+  new_days: 7                             # 신규 = 기준일 포함 최근 7일 안에 등록
+  old_range: ["2025-01-01", "2025-12-31"] # 나머지는 로그 시작(2026-01-01) 전에 등록
+
+# 가상 브랜드: H&M 매장 코너(index_group_name → section_name) 단위로 묶는다.
+# - 같은 디자인(product_code)이 여러 코너에 있으면 상품이 가장 많은 코너의 브랜드로 통일
+# - type: general = 여러 품목을 파는 종합 브랜드, specialty = 한 품목 전문 브랜드
+#   (브랜드충성 고객의 선호 브랜드는 주로 general에서 고른다)
+# - 모든 매장 코너가 정확히 한 브랜드에 들어가야 한다 (빠지거나 겹치면 생성 시 에러)
+brands:
+  # ── 종합 브랜드 ──
+  BR01: {type: general, desc: 여성 데일리, sections: {Ladieswear: [Womens Everyday Collection, Ladies Other]}}
+  BR02: {type: general, desc: 여성 오피스룩, sections: {Ladieswear: [Womens Tailoring]}}
+  BR03: {type: general, desc: 여성 트렌드, sections: {Ladieswear: [Womens Trend]}}
+  BR04: {type: general, desc: 여성 캐주얼, sections: {Ladieswear: [Womens Casual]}}
+  BR05: {type: general, desc: 빅사이즈, sections: {Ladieswear: [H&M+]}}
+  BR06: {type: general, desc: 임부복, sections: {Ladieswear: [Mama]}}
+  BR07: {type: general, desc: 여성 베이직, sections: {Ladieswear: [Womens Everyday Basics]}}
+  BR08: {type: general, desc: 프리미엄 (남녀), sections: {Ladieswear: [Womens Premium], Menswear: [Men Edition]}}
+  BR09: {type: general, desc: 한정 컬렉션, sections: {Ladieswear: [Special Collections]}}
+  BR10: {type: general, desc: 디자이너 협업, sections: {Ladieswear: [Collaborations]}}
+  BR11: {type: general, desc: 영캐주얼, sections: {Divided: [Divided Collection, EQ Divided, Divided Complements Other]}}
+  BR12: {type: general, desc: 영 기획 컬렉션, sections: {Divided: [Divided Projects]}}
+  BR13: {type: general, desc: 영 베이직 (저가), sections: {Divided: [Divided Basics]}}
+  BR14: {type: general, desc: 영 셀렉트, sections: {Divided: [Divided Selected, Divided Asia keys]}}
+  BR15: {type: general, desc: 남성 스마트 캐주얼, sections: {Menswear: [Contemporary Smart]}}
+  BR16: {type: general, desc: 남성 캐주얼, sections: {Menswear: [Contemporary Casual]}}
+  BR17: {type: general, desc: 남성 스트릿, sections: {Menswear: [Contemporary Street]}}
+  BR18: {type: general, desc: 남성 정장, sections: {Menswear: [Men Suits & Tailoring]}}
+  BR19: {type: general, desc: 남성 기획 컬렉션, sections: {Menswear: [Men Project, Men Other 2]}}
+  BR20: {type: general, desc: 스포츠 (남녀아동), sections: {Sport: [Ladies H&M Sport, Men H&M Sport, Kids Sports]}}
+  BR21: {type: general, desc: 여아 (92~140), sections: {Baby/Children: [Kids Girl]}}
+  BR22: {type: general, desc: 남아 (92~140), sections: {Baby/Children: [Kids Boy, Kids Local Relevance]}}
+  BR23: {type: general, desc: 주니어 여아 (134~170), sections: {Baby/Children: [Young Girl]}}
+  BR24: {type: general, desc: 주니어 남아 (134~170), sections: {Baby/Children: [Young Boy]}}
+  BR25: {type: general, desc: 유아 여아, sections: {Baby/Children: [Baby Girl]}}
+  BR26: {type: general, desc: 유아 남아, sections: {Baby/Children: [Baby Boy]}}
+  BR27: {type: general, desc: 유아 필수품, sections: {Baby/Children: [Baby Essentials & Complements]}}
+  # ── 전문 브랜드 ──
+  BR28: {type: specialty, desc: 여성 란제리, sections: {Ladieswear: [Womens Lingerie]}}
+  BR29: {type: specialty, desc: 여성 잠옷·양말, sections: {Ladieswear: ["Womens Nightwear, Socks & Tigh"]}}
+  BR30: {type: specialty, desc: 여성 수영복, sections: {Ladieswear: ["Womens Swimwear, beachwear"]}}
+  BR31: {type: specialty, desc: 여성 주얼리, sections: {Ladieswear: [Womens Small accessories]}}
+  BR32: {type: specialty, desc: 여성 가방·잡화, sections: {Ladieswear: [Womens Big accessories]}}
+  BR33: {type: specialty, desc: 여성 슈즈, sections: {Ladieswear: [Womens Shoes]}}
+  BR34: {type: specialty, desc: 여성 아우터, sections: {Ladieswear: [Womens Jackets]}}
+  BR35: {type: specialty, desc: 데님 (남녀), sections: {Divided: [Ladies Denim], Ladieswear: [Ladies Denim], Menswear: [Denim Men]}}
+  BR36: {type: specialty, desc: 영 액세서리, sections: {Divided: [Divided Accessories]}}
+  BR37: {type: specialty, desc: 남성 언더웨어, sections: {Menswear: [Men Underwear]}}
+  BR38: {type: specialty, desc: 남성 액세서리, sections: {Menswear: [Men Accessories, Men Other]}}
+  BR39: {type: specialty, desc: 남성 슈즈, sections: {Menswear: [Men Shoes]}}
+  BR40: {type: specialty, desc: 남성 아우터, sections: {Menswear: [Mens Outerwear]}}
+  BR41: {type: specialty, desc: 아동 아우터, sections: {Baby/Children: [Kids Outerwear]}}
+  BR42: {type: specialty, desc: 아동 슈즈, sections: {Baby/Children: [Kids & Baby Shoes]}}
+  BR43: {type: specialty, desc: 여아 이너웨어, sections: {Baby/Children: [Girls Underwear & Basics]}}
+  BR44: {type: specialty, desc: 남아 이너웨어, sections: {Baby/Children: [Boys Underwear & Basics]}}
+  BR45: {type: specialty, desc: 아동 액세서리·수영복, sections: {Baby/Children: ["Kids Accessories, Swimwear & D"]}}
+
+paths:
+  raw_dir: data/raw/hm     # articles.csv, transactions_train.csv, images/
+  output: data/processed/products.parquet
+
+transactions_chunksize: 5000000
