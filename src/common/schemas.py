@@ -49,12 +49,28 @@ class Product(BaseModel):
 
 
 class User(BaseModel):
+    """공개 고객 정보 (users.parquet) — 추천 모델 입력으로 써도 된다."""
+
     user_id: str                         # "U00001"
-    persona: Persona
-    age_group: str                       # "20s", "30s" ...
-    gender: str
-    price_sensitivity: float = Field(ge=0.0, le=1.0)
+    age_group: str                       # "10s", "20s", ... "60s+"
+    gender: str                          # "F" | "M"
     signup_at: datetime
+
+
+class UserHidden(BaseModel):
+    """숨김 성향 (users_hidden.parquet) — 행동 생성과 페르소나별 분석에만. 모델 입력 금지 (정답 유출)."""
+
+    user_id: str
+    persona: Persona
+    main_segment: str                    # 주 쇼핑 고객층 (category_l1)
+    preferred_l2: list[str]              # 선호 카테고리 (category_l2)
+    preferred_brands: list[str]
+    price_sensitivity: float = Field(ge=0.0, le=1.0)
+    new_item_affinity: float = Field(ge=0.0, le=1.0)
+    brand_loyalty: float = Field(ge=0.0, le=1.0)
+    activity: float                      # 방문 수 배율 (평균 1)
+    expected_sessions: float
+    seed: int                            # 취향 위치를 빌려온 실제 고객(취향 시드) 번호
 
 
 class Event(BaseModel):
@@ -65,6 +81,21 @@ class Event(BaseModel):
     product_id: str | None = None        # search 이벤트는 None 가능
     query: str | None = None             # search 이벤트일 때만
     timestamp: datetime
+    source: str | None = None            # 이벤트가 나온 화면: "search" | "browse" | "home" | "cart"(지난 장바구니 구매)
+    impression_id: str | None = None     # view·cart·purchase가 나온 목록 노출 (cart 구매는 None)
+
+
+class Impression(BaseModel):
+    """화면에 보여준 상품 목록 (impressions.parquet) — 클릭 안 한 상품 = Ranking 음성 데이터, 클릭률 계산."""
+
+    impression_id: str
+    user_id: str
+    session_id: str
+    timestamp: datetime
+    source: str                          # "search" | "browse" | "home"
+    context: str                         # 검색어 / "고객층/소분류 (정렬)" / 홈의 고객층
+    product_ids: list[str]               # 보여준 순서 그대로 (앞이 위쪽)
+    clicked_ids: list[str]               # 클릭한 순서
 
 
 # ---------------------------------------------------------------------------
