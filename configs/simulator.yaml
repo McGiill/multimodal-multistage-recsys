@@ -1,16 +1,53 @@
+# 고객 행동 시뮬레이터 (python -m src.simulator.run)
+#
+# 목록 기반 생성: 화면(검색 결과 / 카테고리 둘러보기 / 홈)에 상품 목록을 보여주고 → 가상 고객이 반응하면
+# 그 반응이 이벤트(search, view, cart, purchase)와 노출 로그가 된다.
+# 고객이 상품에 매기는 점수(utility)는 숨겨진 성향 값 + 정해진 공식으로 계산한다 (src/simulator/response.py).
 seed: 42
 
-scale:                      # 리소스 부족 시 dev 규모로 downscale (예: 10_000 / 2_000 / 200_000)
-  n_products: 50000
+scale:
   n_users: 10000
-  n_events: 1000000
+  min_events: 1000000        # 명세서 최소 기준 (생성 후 검증)
+  target_events: 1200000     # 보정할 때 전체 이벤트가 이 정도가 되도록 방문 수를 맞춤 (여유 있게 최소 기준보다 크게)
 
 period:
-  start_date: "2026-01-01"
+  start_date: "2026-01-01"   # 마지막 날(시작일 + days - 1)은 catalog.yaml의 created_at.reference_date와 같아야 함
   days: 90
 
-# 페르소나 비율 (합 = 1.0)
-persona_ratio:
+paths:
+  catalog: data/processed/products.parquet
+  raw_dir: data/raw/hm
+  space_dir: data/processed/simulator    # 시뮬레이터 내부 자료 (상품 지도, 취향 시드, 검색 결과표) — 추천 모델 입력 금지
+  output_dir: data/processed             # users / users_hidden / events / impressions .parquet
+  report: artifacts/metrics/simulator_report.json
+
+# ---------------------------------------------------------------------------
+# 상품 지도: H&M 실제 구매 기록 → "같이 산 상품끼리 가깝게" 학습한 상품 벡터 (src/simulator/item_space.py)
+# ---------------------------------------------------------------------------
+item_space:
+  dim: 32
+  svd_iter: 5
+  min_customer_items: 2      # 2개 이상 산 고객만 행렬에 사용
+  popularity_weeks: 12       # 인기도 = H&M 마지막 12주 구매 고객 수
+  seed_min_items: 5          # 취향을 빌려올 실제 고객의 최소 구매 상품 수
+  max_seeds: 100000
+
+# ---------------------------------------------------------------------------
+# Retailrocket 전이 확률 추정 (src/simulator/rr_calibration.py) — 명세서: Markov Chain 전이 확률 추정
+# 활동 방문자를 전환율(low/mid/high) × 방문 깊이(short/long) 6칸으로 나눠 칸마다 전이 확률을 계산하고,
+# 페르소나마다 정의에 맞는 칸(personas.*.rr_group)의 값을 목표로 쓴다.
+# ---------------------------------------------------------------------------
+retailrocket:
+  events: data/raw/retailrocket/events.csv
+  min_sessions: 2            # 활동 방문자 기준: 방문 2회 이상
+  min_events: 5              #               이벤트 5개 이상 (한 번 보고 나가는 유입 제외)
+  conversion_smoothing: 20   # 조회가 적은 방문자의 전환율을 전체 평균 쪽으로 당기는 정도 (가상의 조회 수)
+  depth_split: 0.5           # 방문 깊이 짧음/김 경계 (분위수)
+
+# ---------------------------------------------------------------------------
+# 고객 생성 (src/simulator/users.py)
+# ---------------------------------------------------------------------------
+persona_ratio:               # 합 = 1.0
   trendsetter: 0.15
   pragmatist: 0.20
   bargain_hunter: 0.20
@@ -18,23 +55,158 @@ persona_ratio:
   impulse_buyer: 0.15
   careful_explorer: 0.15
 
-# 페르소나별 행동 특성 (TODO: Retailrocket 데이터로 교정)
-persona_params:
-  trendsetter:      {preferred_l1: ["아우터", "상의"], price_sensitivity: 0.3, conversion_rate: 0.04, new_item_affinity: 0.8}
-  pragmatist:       {preferred_l1: ["하의", "상의"],   price_sensitivity: 0.5, conversion_rate: 0.03, new_item_affinity: 0.3}
-  bargain_hunter:   {preferred_l1: ["상의", "신발"],   price_sensitivity: 0.9, conversion_rate: 0.025, new_item_affinity: 0.2}
-  brand_loyal:      {preferred_l1: ["신발", "가방"],   price_sensitivity: 0.2, conversion_rate: 0.05, new_item_affinity: 0.4}
-  impulse_buyer:    {preferred_l1: ["액세서리", "상의"], price_sensitivity: 0.4, conversion_rate: 0.08, new_item_affinity: 0.6}
-  careful_explorer: {preferred_l1: ["아우터", "하의"], price_sensitivity: 0.6, conversion_rate: 0.015, new_item_affinity: 0.3}
+users:
+  new_user_ratio: 0.08       # 로그 기간 중에 가입한 고객 (이력이 적은 신규 사용자 포함)
+  signup_from: "2024-01-01"  # 나머지 고객의 가입일 범위 시작 (로그 시작 전까지)
+  activity_sigma: 0.9        # 방문 수 개인차 (lognormal, 평균 1) → 헤비 / 라이트 유저
+  taste_jitter: 0.3          # 빌려온 실제 고객 취향 위치를 흔드는 정도 (0이면 그대로)
+  sessions_base: 30          # 방문 수 시작값. 페르소나별 방문 수 = 이 값 × Retailrocket 방문 횟수 비율 × 보정 배율
+  female_ratio_by_segment:   # 주 쇼핑 고객층별 여성 비율 → 성별 배정
+    Ladieswear: 0.95
+    Divided: 0.85
+    Menswear: 0.05
+    Baby/Children: 0.75
+    Sport: 0.60
 
-# 이벤트 전이 확률 (Markov Chain) — 행 합 = 1.0
-transition:
-  search:   {view: 0.70, search: 0.20, exit: 0.10}
-  view:     {view: 0.55, cart: 0.10, search: 0.15, exit: 0.20}
-  cart:     {purchase: 0.35, view: 0.40, exit: 0.25}
-  purchase: {view: 0.30, exit: 0.70}
+# 페르소나별 성향
+# rr_group: Retailrocket 칸 (전환율 low/mid/high / 방문 깊이 short/long) → 담기·구매·이탈·방문 횟수를 이 칸에 맞춰 보정
+#   충동구매 = 전환 높음·짧음, 브랜드충성 = 전환 높음·김, 실용주의자 = 보통·짧음,
+#   트렌드세터 = 보통·김, 가성비추구 = 낮음·짧음, 신중탐색 = 낮음·김
+# 아래 값은 Retailrocket으로 잴 수 없어서 설계값 ([a, b]는 고객마다 이 범위에서 랜덤)
+# preferred_l2: 선호 카테고리 후보(category_l2) 중 n_preferred개를 뽑는다.
+# screens: 방문할 때 화면을 고르는 비율 / browse_sort: 둘러보기 정렬 비율 (생략하면 lists.browse_sort)
+# click_threshold: "아무것도 안 누름"의 점수 (낮을수록 잘 누름) / max_clicks: 한 목록에서 최대 클릭 수
+personas:
+  trendsetter:
+    rr_group: mid/long
+    preferred_l2: [Garment Full body, Garment Upper body, Accessories, Shoes]
+    n_preferred: 2
+    price_sensitivity: [0.2, 0.4]
+    new_item_affinity: [0.6, 0.9]
+    brand_loyalty: [0.0, 0.2]
+    screens: {search: 0.25, browse: 0.35, home: 0.40}
+    browse_sort: {popular: 0.40, newest: 0.50, price_low: 0.10}
+    click_threshold: 3.4
+    max_clicks: 3
+  pragmatist:
+    rr_group: mid/short
+    preferred_l2: [Garment Lower body, Garment Upper body, Underwear, Socks & Tights]
+    n_preferred: 2
+    price_sensitivity: [0.4, 0.6]
+    new_item_affinity: [0.1, 0.3]
+    brand_loyalty: [0.0, 0.2]
+    screens: {search: 0.50, browse: 0.30, home: 0.20}
+    click_threshold: 3.6
+    max_clicks: 2
+  bargain_hunter:
+    rr_group: low/short
+    preferred_l2: [Garment Upper body, Garment Lower body, Accessories, Socks & Tights]
+    n_preferred: 2
+    price_sensitivity: [0.8, 1.0]
+    new_item_affinity: [0.0, 0.2]
+    brand_loyalty: [0.0, 0.1]
+    screens: {search: 0.35, browse: 0.45, home: 0.20}
+    browse_sort: {popular: 0.35, newest: 0.10, price_low: 0.55}
+    click_threshold: 3.4
+    max_clicks: 3
+  brand_loyal:
+    rr_group: high/long
+    preferred_l2: [Garment Upper body, Garment Lower body, Shoes, Garment Full body]
+    n_preferred: 2
+    price_sensitivity: [0.1, 0.3]
+    new_item_affinity: [0.2, 0.5]
+    brand_loyalty: [0.7, 0.9]
+    screens: {search: 0.40, browse: 0.40, home: 0.20}
+    click_threshold: 3.5
+    max_clicks: 2
+  impulse_buyer:
+    rr_group: high/short
+    preferred_l2: [Accessories, Garment Upper body, Swimwear, Shoes]
+    n_preferred: 2
+    price_sensitivity: [0.3, 0.5]
+    new_item_affinity: [0.4, 0.7]
+    brand_loyalty: [0.0, 0.2]
+    screens: {search: 0.20, browse: 0.35, home: 0.45}
+    click_threshold: 3.2
+    max_clicks: 1
+  careful_explorer:
+    rr_group: low/long
+    preferred_l2: [Garment Lower body, Garment Full body, Shoes, Garment Upper body]
+    n_preferred: 2
+    price_sensitivity: [0.5, 0.7]
+    new_item_affinity: [0.1, 0.4]
+    brand_loyalty: [0.0, 0.2]
+    screens: {search: 0.45, browse: 0.40, home: 0.15}
+    click_threshold: 3.0
+    max_clicks: 4
 
-category_tree_path: configs/category_tree.yaml
+# ---------------------------------------------------------------------------
+# 상품 점수(utility) = 아래 항목의 가중합 → 고객별로 표준화(z)해서 사용 (src/simulator/response.py)
+# ---------------------------------------------------------------------------
+utility:
+  taste: 4.0                 # × 취향 유사도 (고객 취향 위치 ↔ 상품 벡터 코사인)
+  popularity: 0.6            # × 인기도 (H&M 최근 구매 고객 수, log 표준화)
+  category: 1.2              # 선호 카테고리(category_l2)면 +
+  segment: 2.5               # 주 쇼핑 고객층(category_l1)이면 +
+  brand: 3.0                 # 선호 브랜드면 + (× brand_loyalty)
+  price: 2.0                 # − 가격 민감도 × 상대 가격 (같은 소분류 중앙값 대비 log 비율)
+  new_item: 2.5              # + 신상품 선호 × 등록 7일 이내 여부 (보는 시점 기준)
+  session: 2.0               # + 이번 방문에서 본 상품들과의 유사도
+  noise: 0.5                 # 고객·상품마다 고정된 랜덤 선호 (어떤 피처로도 설명 안 되는 취향)
+  target_pool: 3000          # 고객이 "마음속으로 찾는 상품"을 뽑는 후보 수 (점수 상위)
 
-stream:                     # docker 실시간 로그 생성
+# ---------------------------------------------------------------------------
+# 화면과 목록
+# ---------------------------------------------------------------------------
+lists:
+  length: 20                 # 한 화면에 보여주는 상품 수
+  position_decay: 0.15       # 순위별로 상품을 볼 확률 = exp(-decay × 순위) → 위쪽일수록 잘 봄
+  browse_pages: [0.7, 0.2, 0.1]   # 카테고리 둘러보기에서 1/2/3페이지를 볼 확률
+  browse_sort: {popular: 0.60, newest: 0.25, price_low: 0.15}   # 둘러보기 정렬 비율 (페르소나별로 덮어쓸 수 있음)
+  home_pool: 1500            # 홈: 고객층 인기 상위 N개 중에서 목록 구성 (추천 API 연결 전 기본값)
+  home_pop_power: 0.5        # 홈에서 인기 상품을 뽑는 쏠림 정도 (확률 ∝ exp(power × 인기도))
+  home_new_share: 0.15       # 홈 목록 중 신상품(최근 등록) 비율
+  new_days: 7                # 신상품 = 등록 후 7일 이내
+
+search:
+  engine: clip               # clip: 실제 검색 엔진(configs/search.yaml 모델·인덱스) | attribute: 속성 일치 검색
+  candidates: 40             # 미등록 상품을 걸러낼 여유분 (화면에는 lists.length개)
+  query_templates:           # 검색어 = 찾는 상품의 속성 조합 (검색 평가셋과 같은 형식)
+    color_name: 0.30         # "black strap top"
+    color_type: 0.40         # "black vest top"
+    color_pattern_type: 0.15 # "white stripe t-shirt" (무늬 없는 상품은 color_type으로)
+    type: 0.15               # "vest top"
+
+# ---------------------------------------------------------------------------
+# 전환 (담기·구매·이탈 확률은 페르소나마다 Retailrocket 칸에 맞춰 보정 → src/simulator/calibrate.py)
+# ---------------------------------------------------------------------------
+funnel:
+  cart_utility_effect: 0.5   # 점수가 높은 상품일수록 더 잘 담음 (z가 1 높을 때 log-odds 증가량)
+  cart_utility_ref: 3.0      # 이 점수의 상품을 담을 확률 = 페르소나 cart_rate
+  cart_forget: 0.30          # 방문마다 장바구니에서 잊어버리는(포기) 확률
+  initial:                   # 보정 전 시작값 (Retailrocket 활동 방문자 전체 평균). 보정 결과가 있으면 쓰지 않음
+    cart_rate: 0.043
+    purchase_in_session: 0.35
+    purchase_next_visit: 0.03
+    exit_after_view: 0.35
+
+calibration:                 # 소규모로 생성 → Retailrocket 칸과 비교 → 조정을 반복
+  users: 1500
+  iterations: 3
+
+# 방문 안에서의 상태 전이 (명세서: config로 변경 가능). 각 줄의 합 = 1.0
+# 조회 직후 방문을 끝낼 확률은 페르소나별 보정값(exit_after_view). 끝내지 않으면 after_view 비율로 다음 행동
+session_flow:
+  after_no_click: {search: 0.30, browse: 0.27, home: 0.18, exit: 0.25}
+  after_view:     {same_list: 0.60, search: 0.19, browse: 0.13, home: 0.08}
+  max_screens: 12            # 한 방문에서 볼 수 있는 최대 화면 수
+
+time:
+  # 시간대별 방문 비율 (0시 ~ 23시, 저녁에 많음)
+  hour_weights: [2, 1, 1, 1, 1, 1, 2, 3, 4, 4, 4, 5, 6, 5, 5, 5, 5, 6, 7, 8, 9, 10, 9, 5]
+  weekday_weights: [1.0, 1.0, 1.0, 1.0, 1.1, 1.3, 1.3]   # 월 ~ 일
+  mean_seconds: {list: 15, view: 45, cart: 20, purchase: 60}   # 단계별 평균 소요 시간 (lognormal)
+  session_gap_min: 30        # 방문 사이 최소 간격 (분)
+
+stream:                      # docker 실시간 로그 생성 (src/simulator/stream.py, 추후 구현)
   events_per_sec: 20
