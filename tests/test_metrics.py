@@ -2,7 +2,14 @@ import math
 
 import pytest
 
-from src.evaluation.metrics import auc, coverage, hit_rate_at_k, mrr, ndcg_at_k, recall_at_k
+from src.evaluation.metrics import (
+    auc,
+    coverage,
+    hit_rate_at_k,
+    mrr,
+    ndcg_at_k,
+    recall_at_k,
+)
 
 
 def test_mrr_binary_and_graded() -> None:

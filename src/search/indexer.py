@@ -27,7 +27,13 @@ from tqdm import tqdm
 from src.common.config import load_config
 from src.common.faiss_utils import build_index, save_index
 from src.common.seed import set_seed
-from src.search.catalog import image_paths, index_dir, load_catalog, product_texts, with_overrides
+from src.search.catalog import (
+    image_paths,
+    index_dir,
+    load_catalog,
+    product_texts,
+    with_overrides,
+)
 from src.search.encoder import build_encoder
 
 

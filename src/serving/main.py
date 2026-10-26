@@ -23,6 +23,12 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
             print(f"[api-server] 검색 인덱스 로딩 완료 ({len(s.product_ids):,} 상품, {s.encoder.model_name})", flush=True)
         except FileNotFoundError as e:
             print(f"[api-server] 검색 인덱스 없음 → make catalog / make index 먼저 실행 ({e})", flush=True)
+    if env("PRELOAD_MODELS", "1") != "0":
+        from src.serving.model_loader import get_recommendation_models
+        try:
+            get_recommendation_models()
+        except FileNotFoundError:
+            print("[api-server] 추천 모델 없음: Stage 1·2 학습 필요", flush=True)
     yield
 
 
