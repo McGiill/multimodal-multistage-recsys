@@ -180,5 +180,9 @@ def test_calibration_moves_toward_target() -> None:
     new = _update(values, got, goal)
     assert new["cart_rate"] == pytest.approx(0.04)          # 측정이 목표의 절반 → 2배
     assert new["exit_after_view"] < values["exit_after_view"]  # 측정 이탈이 목표보다 높음 → 낮춤
-    assert new["purchase_in_session"] == pytest.approx(0.3)
+    assert new["purchase_in_session"] == values["purchase_in_session"]  # 넣은 값 = 결과라서 보정하지 않음
     assert new["purchase_next_visit"] == pytest.approx(0.01)
+
+    half = _update(values, got, goal, step=0.5)  # 반복할수록 조정 폭을 줄임
+    assert half["cart_rate"] == pytest.approx(0.02 * 2**0.5)
+    assert new["exit_after_view"] < half["exit_after_view"] < values["exit_after_view"]

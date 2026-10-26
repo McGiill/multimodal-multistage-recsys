@@ -3,7 +3,7 @@
 1. 명세서 기준: 고객 1만 명 이상, 행동 로그 100만 건 이상, 이벤트 4종, 페르소나 6종
 2. 페르소나별 차이: 목록 클릭률, 전환율, 평균 구매가, 선호 카테고리 비율, 브랜드 집중도, 상대 가격, 신상품 비율
    + Retailrocket 목표(페르소나에 대응한 칸) vs 시뮬레이터 결과
-3. 학습 가능성 점검: 시간 기준 8:1:1로 나눠 test 기간 HitRate@50을 간단한 기준 모델로 계산
+3. 학습 가능성 점검: 공식 분할(src/evaluation/split.py, 방문 단위 8:1:1)의 test 기간 HitRate@50을 간단한 기준 모델로 계산
    (전체 인기순 / 고객층 인기순 / 자주 본 카테고리 인기순 / 최근 본 상품과 함께 본 상품)
    개인화 기준 모델이 전체 인기순보다 높으면 추천 모델이 배울 개인화 신호가 있다는 뜻
 
@@ -19,6 +19,7 @@ import numpy as np
 import pandas as pd
 
 from src.common.config import ROOT, load_config
+from src.evaluation.split import boundaries, session_labels
 from src.simulator.rr_calibration import behavior_stats
 
 RR_KEYS = ("view_to_cart", "view_exit", "cart_purchase_same_visit", "cart_purchase_later")
@@ -58,6 +59,7 @@ def _persona_table(cfg: dict[str, Any], catalog: pd.DataFrame, hidden: pd.DataFr
         rows.append({
             "persona": name,
             "users": len(users),
+            "event_share": round(len(e) / max(len(ev), 1), 3),  # 전체 로그 중 이 페르소나 비중
             "events_per_user": round(len(e) / len(users), 1),
             "sessions_per_user": round(e["session_id"].nunique() / len(users), 1),
             "search_share": round(n["search"] / max(len(e), 1), 3),
@@ -75,13 +77,10 @@ def _persona_table(cfg: dict[str, Any], catalog: pd.DataFrame, hidden: pd.DataFr
 
 
 def _hit_rate(cfg: dict[str, Any], catalog: pd.DataFrame, events: pd.DataFrame, k: int = 50) -> dict[str, float]:
-    days = cfg["period"]["days"]
-    start = pd.Timestamp(cfg["period"]["start_date"])
-    train_end = start + pd.Timedelta(days=round(days * 0.8))
-    test_start = start + pd.Timedelta(days=round(days * 0.9))
+    split = events["session_id"].map(session_labels(events["session_id"], events["timestamp"], boundaries(cfg)))
     inter = events[events["event_type"].isin(["view", "cart", "purchase"])]
-    train = inter[inter["timestamp"] < train_end]
-    test = inter[inter["timestamp"] >= test_start]
+    train = inter[split[inter.index] == "train"]
+    test = inter[split[inter.index] == "test"]
     users = sorted(set(train["user_id"]) & set(test["user_id"]))
     truth = test.groupby("user_id")["product_id"].agg(set)
 
@@ -123,13 +122,18 @@ def _hit_rate(cfg: dict[str, Any], catalog: pd.DataFrame, events: pd.DataFrame, 
 
 
 def _rr_fit(hidden: pd.DataFrame, events: pd.DataFrame, rr_targets: dict[str, Any]) -> list[dict[str, Any]]:
-    """페르소나별 Retailrocket 목표(해당 칸) vs 시뮬레이터 결과 — 같은 함수(behavior_stats)로 계산."""
+    """페르소나별 Retailrocket 목표(해당 칸) vs 시뮬레이터 결과 — 같은 함수(behavior_stats)로 계산.
+
+    carts: 구매 비율 두 개의 바탕이 되는 담기 수. 적을수록 우연한 차이가 크다 (나중 구매처럼 비율이 아주 작으면 특히).
+    """
     persona = events["user_id"].map(hidden.set_index("user_id")["persona"])
     rows = []
     for name, goal in rr_targets.items():
-        got = behavior_stats(events[persona == name])
+        ev = events[persona == name]
+        got = behavior_stats(ev)
         rows.append({"persona": name, "rr_group": goal["rr_group"],
-                     **{k: f"{goal[k]:.3f} / {got[k]:.3f}" for k in RR_KEYS}})
+                     **{k: f"{goal[k]:.3f} / {got[k]:.3f}" for k in RR_KEYS},
+                     "carts": int((ev["event_type"] == "cart").sum())})
     return rows
 
 

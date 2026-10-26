@@ -1,0 +1,119 @@
+{
+  "model_name": "patrickjohncyh/fashion-clip",
+  "text_image_weight": 0.1,
+  "hybrid_text_weight": 0.7,
+  "text_sweep": [
+    {
+      "weight": 0.0,
+      "mrr": 0.779,
+      "ndcg": 0.5927
+    },
+    {
+      "weight": 0.1,
+      "mrr": 0.7836,
+      "ndcg": 0.6003
+    },
+    {
+      "weight": 0.2,
+      "mrr": 0.7773,
+      "ndcg": 0.5971
+    },
+    {
+      "weight": 0.3,
+      "mrr": 0.7751,
+      "ndcg": 0.5906
+    },
+    {
+      "weight": 0.4,
+      "mrr": 0.7675,
+      "ndcg": 0.5763
+    },
+    {
+      "weight": 0.5,
+      "mrr": 0.7524,
+      "ndcg": 0.5527
+    },
+    {
+      "weight": 0.6,
+      "mrr": 0.7346,
+      "ndcg": 0.5239
+    },
+    {
+      "weight": 0.7,
+      "mrr": 0.7137,
+      "ndcg": 0.4897
+    },
+    {
+      "weight": 0.8,
+      "mrr": 0.6764,
+      "ndcg": 0.4506
+    },
+    {
+      "weight": 0.9,
+      "mrr": 0.6426,
+      "ndcg": 0.4049
+    },
+    {
+      "weight": 1.0,
+      "mrr": 0.5809,
+      "ndcg": 0.3556
+    }
+  ],
+  "hybrid_sweep": [
+    {
+      "weight": 0.0,
+      "mrr": 0.6619,
+      "ndcg": 0.3432
+    },
+    {
+      "weight": 0.1,
+      "mrr": 0.7113,
+      "ndcg": 0.3731
+    },
+    {
+      "weight": 0.2,
+      "mrr": 0.7591,
+      "ndcg": 0.3894
+    },
+    {
+      "weight": 0.3,
+      "mrr": 0.802,
+      "ndcg": 0.4158
+    },
+    {
+      "weight": 0.4,
+      "mrr": 0.8525,
+      "ndcg": 0.4288
+    },
+    {
+      "weight": 0.5,
+      "mrr": 0.8825,
+      "ndcg": 0.4396
+    },
+    {
+      "weight": 0.6,
+      "mrr": 0.8886,
+      "ndcg": 0.4498
+    },
+    {
+      "weight": 0.7,
+      "mrr": 0.8861,
+      "ndcg": 0.4502
+    },
+    {
+      "weight": 0.8,
+      "mrr": 0.871,
+      "ndcg": 0.4441
+    },
+    {
+      "weight": 0.9,
+      "mrr": 0.8538,
+      "ndcg": 0.4352
+    },
+    {
+      "weight": 1.0,
+      "mrr": 0.8376,
+      "ndcg": 0.4266
+    }
+  ]
+}

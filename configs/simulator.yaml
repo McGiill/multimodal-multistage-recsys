@@ -60,7 +60,8 @@ users:
   signup_from: "2024-01-01"  # 나머지 고객의 가입일 범위 시작 (로그 시작 전까지)
   activity_sigma: 0.9        # 방문 수 개인차 (lognormal, 평균 1) → 헤비 / 라이트 유저
   taste_jitter: 0.3          # 빌려온 실제 고객 취향 위치를 흔드는 정도 (0이면 그대로)
-  sessions_base: 30          # 방문 수 시작값. 페르소나별 방문 수 = 이 값 × Retailrocket 방문 횟수 비율 × 보정 배율
+  sessions_base: 30          # 방문 수 시작값. 모든 페르소나 같은 값 × 보정 배율 (전체 이벤트가 target_events가 되도록)
+                             # 페르소나별로 다르게 하지 않음: 방문이 잦은 페르소나가 로그를 크게 차지하면 추천 모델이 고르게 못 배움
   female_ratio_by_segment:   # 주 쇼핑 고객층별 여성 비율 → 성별 배정
     Ladieswear: 0.95
     Divided: 0.85
@@ -69,7 +70,7 @@ users:
     Sport: 0.60
 
 # 페르소나별 성향
-# rr_group: Retailrocket 칸 (전환율 low/mid/high / 방문 깊이 short/long) → 담기·구매·이탈·방문 횟수를 이 칸에 맞춰 보정
+# rr_group: Retailrocket 칸 (전환율 low/mid/high / 방문 깊이 short/long) → 담기·구매·이탈을 이 칸에 맞춰 보정
 #   충동구매 = 전환 높음·짧음, 브랜드충성 = 전환 높음·김, 실용주의자 = 보통·짧음,
 #   트렌드세터 = 보통·김, 가성비추구 = 낮음·짧음, 신중탐색 = 낮음·김
 # 아래 값은 Retailrocket으로 잴 수 없어서 설계값 ([a, b]는 고객마다 이 범위에서 랜덤)
@@ -190,8 +191,8 @@ funnel:
     purchase_next_visit: 0.03
     exit_after_view: 0.35
 
-calibration:                 # 소규모로 생성 → Retailrocket 칸과 비교 → 조정을 반복
-  users: 1500
+calibration:                 # 소규모로 생성 → Retailrocket 칸과 비교 → 조정을 반복 (조정 폭은 1, 1/2, 1/3로 줄어듦)
+  users: 3000                # 적으면 우연한 차이가 커짐 (담기 수가 적은 페르소나는 구매율이 ±0.03 이상 흔들림)
   iterations: 3
 
 # 방문 안에서의 상태 전이 (명세서: config로 변경 가능). 각 줄의 합 = 1.0

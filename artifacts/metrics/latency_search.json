@@ -1,0 +1,29 @@
+{
+  "target": "search",
+  "measured_at": "2026-10-11T02:40:45",
+  "platform": "macOS-26.5.2-arm64-arm-64bit",
+  "cpu": "Apple M1 Max",
+  "torch_threads": 1,
+  "device": "cpu",
+  "model_name": "openai/clip-vit-base-patch32",
+  "index": "hnsw",
+  "n_products": 50000,
+  "text": {
+    "p50_ms": 20.68,
+    "p95_ms": 21.91,
+    "mean_ms": 20.78,
+    "max_ms": 23.12
+  },
+  "image": {
+    "p50_ms": 56.42,
+    "p95_ms": 63.93,
+    "mean_ms": 57.45,
+    "max_ms": 81.37
+  },
+  "hybrid": {
+    "p50_ms": 79.44,
+    "p95_ms": 91.39,
+    "mean_ms": 80.71,
+    "max_ms": 103.69
+  }
+}

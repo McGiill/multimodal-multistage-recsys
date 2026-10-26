@@ -1,0 +1,54 @@
+{
+  "model_name": "hf-hub:Marqo/marqo-fashionCLIP",
+  "index": {
+    "type": "hnsw",
+    "nlist": 256,
+    "m": 16,
+    "nbits": 8,
+    "nprobe": 16,
+    "hnsw_m": 32,
+    "ef_construction": 200,
+    "ef_search": 128
+  },
+  "weights": {
+    "text_query.image_weight": 0.4,
+    "hybrid.text_weight": 0.5
+  },
+  "k": 10,
+  "split": "test",
+  "mrr_min_grade": 1,
+  "seed": 42,
+  "evaluated_at": "2026-10-12T20:34:24",
+  "results": {
+    "clip_text": {
+      "n_queries": 493,
+      "mrr": 0.7473,
+      "ndcg@10": 0.5446,
+      "hit_rate@10": 0.9087
+    },
+    "clip_image": {
+      "n_queries": 507,
+      "mrr": 0.6434,
+      "ndcg@10": 0.3373,
+      "hit_rate@10": 0.9014
+    },
+    "clip_hybrid": {
+      "n_queries": 246,
+      "mrr": 0.8031,
+      "ndcg@10": 0.3957,
+      "hit_rate@10": 0.9634
+    },
+    "clip_all": {
+      "n_queries": 1246,
+      "mrr": 0.716,
+      "ndcg@10": 0.4309,
+      "hit_rate@10": 0.9165
+    },
+    "bm25_text": {
+      "n_queries": 493,
+      "mrr": 0.8835,
+      "ndcg@10": 0.6324,
+      "hit_rate@10": 0.9858
+    }
+  }
+}

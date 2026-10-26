@@ -1,0 +1,54 @@
+{
+  "model_name": "openai/clip-vit-base-patch32",
+  "index": {
+    "type": "hnsw",
+    "nlist": 256,
+    "m": 16,
+    "nbits": 8,
+    "nprobe": 16,
+    "hnsw_m": 32,
+    "ef_construction": 200,
+    "ef_search": 128
+  },
+  "weights": {
+    "text_query.image_weight": 0.2,
+    "hybrid.text_weight": 0.5
+  },
+  "k": 10,
+  "split": "test",
+  "mrr_min_grade": 1,
+  "seed": 42,
+  "evaluated_at": "2026-10-12T20:33:46",
+  "results": {
+    "clip_text": {
+      "n_queries": 493,
+      "mrr": 0.7064,
+      "ndcg@10": 0.5065,
+      "hit_rate@10": 0.8844
+    },
+    "clip_image": {
+      "n_queries": 507,
+      "mrr": 0.5292,
+      "ndcg@10": 0.2222,
+      "hit_rate@10": 0.7771
+    },
+    "clip_hybrid": {
+      "n_queries": 246,
+      "mrr": 0.7864,
+      "ndcg@10": 0.3788,
+      "hit_rate@10": 0.9512
+    },
+    "clip_all": {
+      "n_queries": 1246,
+      "mrr": 0.6501,
+      "ndcg@10": 0.3656,
+      "hit_rate@10": 0.8539
+    },
+    "bm25_text": {
+      "n_queries": 493,
+      "mrr": 0.8835,
+      "ndcg@10": 0.6324,
+      "hit_rate@10": 0.9858
+    }
+  }
+}
