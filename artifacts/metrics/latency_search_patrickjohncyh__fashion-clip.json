@@ -1,0 +1,29 @@
+{
+  "target": "search",
+  "measured_at": "2026-10-12T21:01:25",
+  "platform": "macOS-26.5.2-arm64-arm-64bit",
+  "cpu": "Apple M1 Max",
+  "torch_threads": 1,
+  "device": "cpu",
+  "model_name": "patrickjohncyh/fashion-clip",
+  "index": "hnsw",
+  "n_products": 50000,
+  "text": {
+    "p50_ms": 24.54,
+    "p95_ms": 25.82,
+    "mean_ms": 24.46,
+    "max_ms": 26.5
+  },
+  "image": {
+    "p50_ms": 63.3,
+    "p95_ms": 86.62,
+    "mean_ms": 65.17,
+    "max_ms": 114.42
+  },
+  "hybrid": {
+    "p50_ms": 88.61,
+    "p95_ms": 107.57,
+    "mean_ms": 90.49,
+    "max_ms": 125.77
+  }
+}

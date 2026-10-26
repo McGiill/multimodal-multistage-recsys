@@ -1,0 +1,29 @@
+{
+  "target": "search",
+  "measured_at": "2026-10-12T20:34:28",
+  "platform": "macOS-26.5.2-arm64-arm-64bit",
+  "cpu": "Apple M1 Max",
+  "torch_threads": 1,
+  "device": "cpu",
+  "model_name": "hf-hub:Marqo/marqo-fashionCLIP",
+  "index": "hnsw",
+  "n_products": 50000,
+  "text": {
+    "p50_ms": 26.95,
+    "p95_ms": 28.61,
+    "mean_ms": 26.94,
+    "max_ms": 29.97
+  },
+  "image": {
+    "p50_ms": 95.32,
+    "p95_ms": 102.39,
+    "mean_ms": 94.81,
+    "max_ms": 111.78
+  },
+  "hybrid": {
+    "p50_ms": 127.08,
+    "p95_ms": 139.22,
+    "mean_ms": 127.15,
+    "max_ms": 176.51
+  }
+}

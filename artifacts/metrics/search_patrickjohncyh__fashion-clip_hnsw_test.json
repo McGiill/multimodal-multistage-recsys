@@ -1,0 +1,54 @@
+{
+  "model_name": "patrickjohncyh/fashion-clip",
+  "index": {
+    "type": "hnsw",
+    "nlist": 256,
+    "m": 16,
+    "nbits": 8,
+    "nprobe": 16,
+    "hnsw_m": 32,
+    "ef_construction": 200,
+    "ef_search": 128
+  },
+  "weights": {
+    "text_query.image_weight": 0.1,
+    "hybrid.text_weight": 0.7
+  },
+  "k": 10,
+  "split": "test",
+  "mrr_min_grade": 1,
+  "seed": 42,
+  "evaluated_at": "2026-10-12T21:01:20",
+  "results": {
+    "clip_text": {
+      "n_queries": 493,
+      "mrr": 0.7998,
+      "ndcg@10": 0.6116,
+      "hit_rate@10": 0.9168
+    },
+    "clip_image": {
+      "n_queries": 507,
+      "mrr": 0.6439,
+      "ndcg@10": 0.32,
+      "hit_rate@10": 0.8935
+    },
+    "clip_hybrid": {
+      "n_queries": 246,
+      "mrr": 0.865,
+      "ndcg@10": 0.4411,
+      "hit_rate@10": 0.9675
+    },
+    "clip_all": {
+      "n_queries": 1246,
+      "mrr": 0.7492,
+      "ndcg@10": 0.4593,
+      "hit_rate@10": 0.9173
+    },
+    "bm25_text": {
+      "n_queries": 493,
+      "mrr": 0.8835,
+      "ndcg@10": 0.6324,
+      "hit_rate@10": 0.9858
+    }
+  }
+}

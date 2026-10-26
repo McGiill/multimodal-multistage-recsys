@@ -1,0 +1,119 @@
+{
+  "model_name": "hf-hub:Marqo/marqo-fashionCLIP",
+  "text_image_weight": 0.4,
+  "hybrid_text_weight": 0.5,
+  "text_sweep": [
+    {
+      "weight": 0.0,
+      "mrr": 0.6783,
+      "ndcg": 0.4836
+    },
+    {
+      "weight": 0.1,
+      "mrr": 0.7089,
+      "ndcg": 0.5119
+    },
+    {
+      "weight": 0.2,
+      "mrr": 0.7282,
+      "ndcg": 0.5336
+    },
+    {
+      "weight": 0.3,
+      "mrr": 0.7382,
+      "ndcg": 0.5462
+    },
+    {
+      "weight": 0.4,
+      "mrr": 0.7574,
+      "ndcg": 0.5572
+    },
+    {
+      "weight": 0.5,
+      "mrr": 0.7495,
+      "ndcg": 0.5519
+    },
+    {
+      "weight": 0.6,
+      "mrr": 0.7426,
+      "ndcg": 0.5354
+    },
+    {
+      "weight": 0.7,
+      "mrr": 0.7333,
+      "ndcg": 0.5125
+    },
+    {
+      "weight": 0.8,
+      "mrr": 0.7141,
+      "ndcg": 0.48
+    },
+    {
+      "weight": 0.9,
+      "mrr": 0.6808,
+      "ndcg": 0.4404
+    },
+    {
+      "weight": 1.0,
+      "mrr": 0.6351,
+      "ndcg": 0.3917
+    }
+  ],
+  "hybrid_sweep": [
+    {
+      "weight": 0.0,
+      "mrr": 0.6934,
+      "ndcg": 0.3628
+    },
+    {
+      "weight": 0.1,
+      "mrr": 0.7247,
+      "ndcg": 0.3799
+    },
+    {
+      "weight": 0.2,
+      "mrr": 0.7633,
+      "ndcg": 0.3904
+    },
+    {
+      "weight": 0.3,
+      "mrr": 0.7858,
+      "ndcg": 0.4033
+    },
+    {
+      "weight": 0.4,
+      "mrr": 0.8316,
+      "ndcg": 0.4173
+    },
+    {
+      "weight": 0.5,
+      "mrr": 0.8519,
+      "ndcg": 0.4296
+    },
+    {
+      "weight": 0.6,
+      "mrr": 0.849,
+      "ndcg": 0.429
+    },
+    {
+      "weight": 0.7,
+      "mrr": 0.8405,
+      "ndcg": 0.4242
+    },
+    {
+      "weight": 0.8,
+      "mrr": 0.8309,
+      "ndcg": 0.4173
+    },
+    {
+      "weight": 0.9,
+      "mrr": 0.814,
+      "ndcg": 0.4075
+    },
+    {
+      "weight": 1.0,
+      "mrr": 0.7981,
+      "ndcg": 0.3984
+    }
+  ]
+}

@@ -1,0 +1,190 @@
+{
+  "totals": {
+    "users": 10000,
+    "sessions": 344082,
+    "events": 1184026,
+    "events_by_type": {
+      "view": 740855,
+      "search": 398205,
+      "cart": 31793,
+      "purchase": 13173
+    },
+    "impressions": 967377,
+    "catalog_items_viewed": "25,831 / 50,000 (51.7%)",
+    "users_under_5_events": 230,
+    "period": "2026-01-01 00:00:35.379000 ~ 2026-04-01 00:07:30.583000"
+  },
+  "spec": {
+    "users >= 10,000": true,
+    "events >= 1,000,000": true,
+    "event types = search/view/cart/purchase": true,
+    "personas = 6": true
+  },
+  "personas": [
+    {
+      "persona": "bargain_hunter",
+      "users": 1983,
+      "event_share": 0.113,
+      "events_per_user": 67.6,
+      "sessions_per_user": 34.5,
+      "search_share": 0.371,
+      "list_click_rate": 0.552,
+      "view_to_cart": 0.0087,
+      "cart_to_purchase": 0.325,
+      "avg_purchase_price": 9.45,
+      "view_rel_price": -0.636,
+      "pref_category_share": 0.628,
+      "brand_concentration": 0.345,
+      "new_item_share_last_week": 0.102,
+      "top_categories": "Garment Upper body 44%, Garment Lower body 21%, Accessories 13%"
+    },
+    {
+      "persona": "brand_loyal",
+      "users": 1533,
+      "event_share": 0.23,
+      "events_per_user": 178.0,
+      "sessions_per_user": 32.5,
+      "search_share": 0.303,
+      "list_click_rate": 0.648,
+      "view_to_cart": 0.0994,
+      "cart_to_purchase": 0.491,
+      "avg_purchase_price": 16.92,
+      "view_rel_price": -0.097,
+      "pref_category_share": 0.671,
+      "brand_concentration": 0.519,
+      "new_item_share_last_week": 0.189,
+      "top_categories": "Garment Upper body 49%, Garment Lower body 23%, Garment Full body 19%"
+    },
+    {
+      "persona": "careful_explorer",
+      "users": 1475,
+      "event_share": 0.17,
+      "events_per_user": 136.5,
+      "sessions_per_user": 35.4,
+      "search_share": 0.307,
+      "list_click_rate": 0.688,
+      "view_to_cart": 0.0182,
+      "cart_to_purchase": 0.378,
+      "avg_purchase_price": 14.87,
+      "view_rel_price": -0.227,
+      "pref_category_share": 0.684,
+      "brand_concentration": 0.373,
+      "new_item_share_last_week": 0.177,
+      "top_categories": "Garment Upper body 44%, Garment Lower body 20%, Garment Full body 17%"
+    },
+    {
+      "persona": "impulse_buyer",
+      "users": 1467,
+      "event_share": 0.196,
+      "events_per_user": 158.1,
+      "sessions_per_user": 33.2,
+      "search_share": 0.336,
+      "list_click_rate": 0.713,
+      "view_to_cart": 0.0486,
+      "cart_to_purchase": 0.322,
+      "avg_purchase_price": 14.21,
+      "view_rel_price": -0.173,
+      "pref_category_share": 0.559,
+      "brand_concentration": 0.334,
+      "new_item_share_last_week": 0.268,
+      "top_categories": "Garment Upper body 47%, Accessories 13%, Garment Lower body 10%"
+    },
+    {
+      "persona": "pragmatist",
+      "users": 2039,
+      "event_share": 0.14,
+      "events_per_user": 81.6,
+      "sessions_per_user": 35.5,
+      "search_share": 0.439,
+      "list_click_rate": 0.493,
+      "view_to_cart": 0.0168,
+      "cart_to_purchase": 0.32,
+      "avg_purchase_price": 13.27,
+      "view_rel_price": -0.232,
+      "pref_category_share": 0.642,
+      "brand_concentration": 0.379,
+      "new_item_share_last_week": 0.176,
+      "top_categories": "Garment Upper body 45%, Garment Lower body 22%, Underwear 12%"
+    },
+    {
+      "persona": "trendsetter",
+      "users": 1503,
+      "event_share": 0.15,
+      "events_per_user": 118.1,
+      "sessions_per_user": 35.0,
+      "search_share": 0.299,
+      "list_click_rate": 0.609,
+      "view_to_cart": 0.0297,
+      "cart_to_purchase": 0.329,
+      "avg_purchase_price": 15.78,
+      "view_rel_price": -0.111,
+      "pref_category_share": 0.616,
+      "brand_concentration": 0.353,
+      "new_item_share_last_week": 0.411,
+      "top_categories": "Garment Upper body 45%, Garment Full body 17%, Accessories 11%"
+    }
+  ],
+  "retailrocket_fit": [
+    {
+      "persona": "trendsetter",
+      "rr_group": "mid/long",
+      "view_to_cart": "0.029 / 0.030",
+      "view_exit": "0.380 / 0.385",
+      "cart_purchase_same_visit": "0.330 / 0.327",
+      "cart_purchase_later": "0.003 / 0.008",
+      "carts": 3558
+    },
+    {
+      "persona": "pragmatist",
+      "rr_group": "mid/short",
+      "view_to_cart": "0.018 / 0.017",
+      "view_exit": "0.646 / 0.646",
+      "cart_purchase_same_visit": "0.285 / 0.282",
+      "cart_purchase_later": "0.037 / 0.038",
+      "carts": 1536
+    },
+    {
+      "persona": "bargain_hunter",
+      "rr_group": "low/short",
+      "view_to_cart": "0.008 / 0.009",
+      "view_exit": "0.722 / 0.723",
+      "cart_purchase_same_visit": "0.273 / 0.251",
+      "cart_purchase_later": "0.076 / 0.073",
+      "carts": 724
+    },
+    {
+      "persona": "brand_loyal",
+      "rr_group": "high/long",
+      "view_to_cart": "0.097 / 0.099",
+      "view_exit": "0.228 / 0.235",
+      "cart_purchase_same_visit": "0.474 / 0.470",
+      "cart_purchase_later": "0.030 / 0.030",
+      "carts": 16467
+    },
+    {
+      "persona": "impulse_buyer",
+      "rr_group": "high/short",
+      "view_to_cart": "0.048 / 0.049",
+      "view_exit": "0.289 / 0.298",
+      "cart_purchase_same_visit": "0.316 / 0.316",
+      "cart_purchase_later": "0.012 / 0.009",
+      "carts": 7031
+    },
+    {
+      "persona": "careful_explorer",
+      "rr_group": "low/long",
+      "view_to_cart": "0.019 / 0.018",
+      "view_exit": "0.340 / 0.340",
+      "cart_purchase_same_visit": "0.344 / 0.343",
+      "cart_purchase_later": "0.045 / 0.037",
+      "carts": 2477
+    }
+  ],
+  "learnability": {
+    "n_test_users": 7880,
+    "hit_rate@50_popular": 0.3801,
+    "hit_rate@50_segment_popular": 0.4604,
+    "hit_rate@50_category_popular": 0.3971,
+    "hit_rate@50_covisit": 0.3636
+  }
+}
