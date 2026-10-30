@@ -28,15 +28,21 @@ session:
   long_short_alpha: 0.6   # final = alpha*long(user tower) + (1-alpha)*short(session)
 
 reranking:
+  category_field: category_l2       # 다양성 기준 category_l1 | category_l2 | category_l3
+  dedupe_field: product_code        # 같은 디자인 색상 변형은 1개만 (null이면 product_id만)
   max_same_category_run: 2          # 동일 카테고리 연속 3개 이상 금지
   cold_start_min_events: 5          # 이력 5개 미만 → 인기+트렌딩 대체
+  popular_trending_ratio: [1, 1]    # cold-start 인기:트렌딩 교차 비율
   new_item_days: 7
-  new_item_min_slots: 1
+  new_item_min_slots: 1             # 신규 상품 슬롯 개수 (위치는 Top-N 균등 분할로 자동 계산)
   mab:
-    algorithm: epsilon_greedy       # epsilon_greedy | ucb | thompson
+    enabled: true                   # A/B 테스트 Control은 false
+    algorithm: epsilon_greedy       # epsilon_greedy | ucb
+    arm_field: category_l2          # arm 단위 (상품 단위는 클릭이 너무 드묾)
     epsilon: 0.1
+    ctr_prior: [1, 2]               # Epsilon-Greedy 클릭률 보정 (클릭, 노출): 초반 운에 갇힘 방지
     ucb_c: 2.0
-    exploration_slots: [1, 2]
+    exploration_slots: 2            # 탐색 슬롯 개수 (명세: 1~2개, 위치는 자동 계산)
 
 default_top_n: 10
 paths:
