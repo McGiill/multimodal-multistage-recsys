@@ -1,0 +1,72 @@
+{
+  "retrieval": {
+    "queries": 76242,
+    "recall_at_300": 0.30089714330683875,
+    "ndcg_at_300": 0.06001496105481271
+  },
+  "cvr": {
+    "auc": 0.7215989041579429,
+    "rows": 68005,
+    "positives": 1248,
+    "logloss": 0.09141150861978531
+  },
+  "latency": {
+    "candidate_p95_ms": 1.3380150005104952,
+    "candidate_p50_ms": 1.1507999879540876,
+    "candidate_max_ms": 1.6242999990936369,
+    "total_p95_ms": 2.9171050045988522,
+    "min_candidates": 300,
+    "requests": 200,
+    "warmups": 20,
+    "scope": "includes history lookup; excludes model startup and HTTP"
+  },
+  "catalog_items": 50000,
+  "users": 10000,
+  "events": 1184026,
+  "history_events_saved": 1061658,
+  "data_audit": {
+    "input_events": 1184026,
+    "pre_signup_events_excluded": 386,
+    "affected_users": 99,
+    "excluded_by_split": {
+      "0": 333,
+      "1": 37,
+      "2": 16
+    }
+  },
+  "history_policy": "frozen_split",
+  "label_definition": "Purchase within 24h attributed only to latest strictly earlier view of same user/item, within the same split; fully observed windows only",
+  "split_examples": {
+    "train": {
+      "retrieval_views": 584988,
+      "cvr_rows": 576817,
+      "cvr_positives": 9813
+    },
+    "valid": {
+      "retrieval_views": 79348,
+      "cvr_rows": 69097,
+      "cvr_positives": 1156
+    },
+    "test": {
+      "retrieval_views": 76242,
+      "cvr_rows": 68005,
+      "cvr_positives": 1248
+    }
+  },
+  "boundary_view_exclusions": 42,
+  "thresholds": {
+    "recall": true,
+    "cvr_auc": true,
+    "candidate_latency": true,
+    "candidate_count": true
+  },
+  "limitations": [
+    "Offline snapshot only; Redis streaming and Stage3 not integrated.",
+    "Observed product price is consumed as supplied, not inferred currency.",
+    "Results describe the supplied simulator dataset, not real shoppers or an online experiment.",
+    "Frozen holdout history: valid uses train; test uses train+valid before their nominal boundaries.",
+    "CVR AUC uses logged views, not unviewed FAISS candidates; exposure-selection bias remains.",
+    "Supplied static catalog cannot validate historical price changes.",
+    "Next-view retrieval target; CVR is conditional on a view."
+  ]
+}

@@ -1,8 +1,7 @@
-"""Item 임베딩 오프라인 사전 계산 → FAISS 저장. 후보 300개 < 100ms
+"""상품 임베딩 오프라인 계산 및 FAISS 저장."""
 
-담당: C
-"""
+from src.recommendation.training import arguments, build_index
 
-from __future__ import annotations
-
-# TODO(C): 구현
+if __name__ == "__main__":
+    _, out, _ = arguments()
+    build_index(out)

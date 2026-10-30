@@ -1,8 +1,7 @@
-"""Two-Tower 학습 (랜덤 네거티브 1:4). 목표 Recall@300 ≥ 0.30
+"""python -m src.recommendation.candidate.train [--data-dir ... --output ... --config ...]"""
 
-담당: C
-"""
+from src.recommendation.training import arguments, train_candidate
 
-from __future__ import annotations
-
-# TODO(C): 구현
+if __name__ == "__main__":
+    root, out, cfg = arguments()
+    train_candidate(root, out, cfg)
