@@ -1,12 +1,9 @@
-"""Multi-Stage 파이프라인: Stage1 Candidate → Stage2 Ranking → Stage3 Re-ranking.
-
-각 Stage 처리 시간을 측정해 pipeline_latency 로 반환한다.
-담당: C(Stage1/2 연결) + D(Stage3, 최종 조립)
-"""
-
-from __future__ import annotations
+"""Stage1 후보 → Stage2 CVR. Stage3는 미연결이며 is_exploration=False."""
 
 import time
+from datetime import UTC, datetime
+
+import numpy as np
 
 from src.common.schemas import (
     PipelineLatency,
@@ -14,31 +11,45 @@ from src.common.schemas import (
     RecommendResponse,
     SessionContext,
 )
+from src.recommendation.ranking.features import stamp
 from src.recommendation.strategies.base import RecommendStrategy, register
+from src.serving.model_loader import get_recommendation_models
 
 
 @register("multistage")
 class MultiStageStrategy(RecommendStrategy):
-    def recommend(self, user_id: str, top_n: int) -> RecommendResponse:
-        t0 = time.perf_counter()
-        # TODO(C): candidates = retriever.retrieve(user_id, n=300)
-        t1 = time.perf_counter()
-        # TODO(C): ranked = ranker.score(user_id, candidates)
-        t2 = time.perf_counter()
-        # TODO(D): final = reranker.apply(user_id, ranked, top_n)  # diversity / cold start / new item / MAB
-        items: list[RecommendationItem] = [
-            RecommendationItem(product_id="P00000", score=0.0, reason="stub", is_exploration=False)
+    def recommend(self, user_id, top_n, at=None):
+        begin = time.perf_counter()
+        models = get_recommendation_models()
+        now = stamp(at or datetime.now(UTC))
+        if now < models.store.metadata["selection_cutoff"]:
+            raise ValueError("Prediction time precedes model validation cutoff")
+        ids, _, state = models.retriever.retrieve(
+            user_id, models.cfg["candidate"]["n_candidates"], now
+        )
+        candidate = time.perf_counter()
+        scores = models.score(ids, state, now)
+        order = np.argsort(-scores, kind="stable")[:top_n]
+        ranked = time.perf_counter()
+        items = [
+            RecommendationItem(
+                product_id=models.store.item_ids[ids[i] - 1],
+                score=float(scores[i]),
+                reason="cvr",
+                is_exploration=False,
+            )
+            for i in order
         ]
-        t3 = time.perf_counter()
-
         return RecommendResponse(
             user_id=user_id,
-            recommendations=items[:top_n],
+            recommendations=items,
             pipeline_latency=PipelineLatency(
-                candidate_ms=(t1 - t0) * 1000,
-                ranking_ms=(t2 - t1) * 1000,
-                reranking_ms=(t3 - t2) * 1000,
-                total_ms=(t3 - t0) * 1000,
+                candidate_ms=(candidate - begin) * 1000,
+                ranking_ms=(ranked - candidate) * 1000,
+                reranking_ms=0,
+                total_ms=(ranked - begin) * 1000,
             ),
-            session_context=SessionContext(),  # TODO(D): Redis 세션 피처
+            session_context=SessionContext(
+                recent_clicks=[models.store.item_ids[i - 1] for i in state[0] if i > 0]
+            ),
         )

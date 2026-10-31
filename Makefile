@@ -21,11 +21,10 @@ search-eval-set: ## 검색 평가셋(쿼리 → 정답 상품) 생성
 eval-search:    ## 검색 평가 (CLIP vs BM25)
 	python -m src.evaluation.eval_search
 
-train:          ## Two-Tower → DeepFM → Session Encoder 학습
+train:          ## Two-Tower → FAISS → DeepFM CVR 학습
 	python -m src.recommendation.candidate.train
 	python -m src.recommendation.candidate.build_index
 	python -m src.recommendation.ranking.train
-	python -m src.recommendation.session.train
 
 eval:           ## 오프라인 지표 산출
 	python -m src.evaluation.eval_search
@@ -45,3 +44,6 @@ test:
 
 lint:
 	ruff check src tests
+
+eval-rec:
+	python -m src.evaluation.eval_recommend

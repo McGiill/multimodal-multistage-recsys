@@ -66,11 +66,11 @@ def set_search_params(index: faiss.Index, cfg: dict[str, Any]) -> None:
 
 def save_index(index: faiss.Index, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    faiss.write_index(index, str(path))
+    faiss.serialize_index(index).tofile(path)
 
 
 def load_index(path: Path, cfg: dict[str, Any] | None = None) -> faiss.Index:
-    index = faiss.read_index(str(path))
+    index = faiss.deserialize_index(np.fromfile(path, dtype=np.uint8))
     if cfg is not None:
         set_search_params(index, cfg)
     return index
