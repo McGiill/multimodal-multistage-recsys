@@ -236,6 +236,14 @@ def test_new_item_slot_filled_from_candidates():
     res = Reranker(base_config(new_item_slots=1)).rerank(cands + [fresh], 20, NOW)
     assert res.items[5].product_id == "NEW1"
     assert res.items[5].reason == "new_item"
+    assert res.items[5].is_exploration  # 명세: 신규 상품 노출도 탐색 칸
+
+
+def test_new_item_slot_marked_exploration_even_when_mab_off():
+    fresh = make("NEW3", 0.01, CATS[3], created_at=NOW - timedelta(days=2))
+    res = Reranker(base_config(new_item_slots=1)).rerank(random_candidates() + [fresh], 20, NOW)
+    assert [i.product_id for i in res.items if i.is_exploration] == ["NEW3"]
+    assert res.exploration_arms == {}
 
 
 def test_new_item_slot_uses_fallback_pool():
@@ -567,3 +575,47 @@ def test_reranker_with_bandit_keeps_rules(algorithm):
     assert all(i.reason == "mab_exploration" and i.product_id not in top_ids for i in explored)
     assert max_run_length(cats_of(res.items, cands)) <= 2
     assert len({i.product_id for i in res.items}) == 10
+
+
+@pytest.mark.parametrize("algorithm, cls", [("epsilon_greedy", EpsilonGreedyExplorer),
+                                            ("ucb", UCBExplorer)])
+def test_default_explorer_follows_config(algorithm, cls):
+    cfg = RerankConfig(category_field="category_l1", mab=MabConfig(algorithm=algorithm))
+    assert isinstance(Reranker(cfg).explorer, cls)
+
+
+def test_default_explorer_from_recommend_yaml():
+    reranker = Reranker(RerankConfig.from_recommend_config())
+    assert isinstance(reranker.explorer, (EpsilonGreedyExplorer, UCBExplorer))
+    assert reranker.explorer.arm_field == reranker.config.mab.arm_field
+
+
+def test_exploration_arms_only_for_mab_slots():
+    fresh = make("NEW4", 0.01, CATS[3], created_at=NOW - timedelta(days=1))
+    cands = random_candidates() + [fresh]
+    lookup = {c.product_id: c for c in cands}
+    res = Reranker(RerankConfig(category_field="category_l1")).rerank(cands, 20, NOW)
+    mab_ids = [i.product_id for i in res.items if i.reason == "mab_exploration"]
+    assert len(mab_ids) == 2
+    assert "NEW4" in [i.product_id for i in res.items if i.is_exploration]
+    assert res.exploration_arms == {pid: lookup[pid].category_l2 for pid in mab_ids}
+
+
+def test_record_feedback_skips_new_item_slot():
+    fresh = make("NEW5", 0.01, CATS[3], l2="Fresh", created_at=NOW - timedelta(days=1))
+    store = InMemoryStatsStore()
+    explorer = build_explorer(MabConfig(), store=store)
+    reranker = Reranker(RerankConfig(category_field="category_l1"), explorer)
+    res = reranker.rerank(random_candidates() + [fresh], 20, NOW)
+    clicked = {i.product_id for i in res.items}  # 전부 클릭했다고 가정
+    assert reranker.record_feedback(res, clicked) == 2
+    arms = list(res.exploration_arms.values())
+    stats = store.get(arms + ["Fresh"])
+    assert all(stats[a].shown == 1 and stats[a].clicks == 1 for a in arms)
+    assert stats["Fresh"].shown == 0
+
+
+def test_record_feedback_noop_for_random_baseline():
+    reranker = Reranker(RerankConfig(category_field="category_l1"), RandomCategoryExplorer())
+    res = reranker.rerank(random_candidates(), 20, NOW)
+    assert reranker.record_feedback(res, set()) == 0

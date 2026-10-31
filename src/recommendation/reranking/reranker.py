@@ -17,20 +17,22 @@ Stage 2가 점수를 매긴 후보를 받아 최종 Top-N을 만든다.
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from itertools import chain
-from typing import Any, Mapping, Sequence
+from typing import Any, Collection, Mapping, Sequence
 
 from src.common.config import load_config
 from src.recommendation.reranking.cold_start import interleave, is_cold_start
 from src.recommendation.reranking.diversity import breaks_diversity
 from src.recommendation.reranking.items import Candidate, RerankedItem, RerankResult, dedupe_key
-from src.recommendation.reranking.mab import ExplorationPicker, RandomCategoryExplorer
+from src.recommendation.reranking.mab import ExplorationPicker, MabConfig, build_explorer
 from src.recommendation.reranking.new_item import build_new_item_pool
 
 # 위치 → (풀, reason, is_exploration)
 SlotPools = dict[int, tuple[list[Candidate], str, bool]]
+
+MAB_REASON = "mab_exploration"
 
 
 # ---------------------------------------------------------------------------
@@ -54,6 +56,7 @@ class RerankConfig:
 
     exploration_enabled: bool = True  # A/B 테스트 Control은 False
     exploration_slots: int = 2        # 개수 (명세: 1~2개)
+    mab: MabConfig = field(default_factory=MabConfig)  # 기본 탐색 선택기 설정
 
     def __post_init__(self) -> None:
         if self.category_field not in {"category_l1", "category_l2", "category_l3"}:
@@ -83,6 +86,7 @@ class RerankConfig:
             new_item_slots=r["new_item_min_slots"],
             exploration_enabled=mab.get("enabled", True),
             exploration_slots=mab["exploration_slots"],
+            mab=MabConfig.from_recommend_config(raw),
         )
 
 
@@ -122,7 +126,7 @@ def slot_positions(top_n: int, n_new: int, n_exp: int) -> tuple[list[int], list[
 class Reranker:
     def __init__(self, config: RerankConfig, explorer: ExplorationPicker | None = None) -> None:
         self.config = config
-        self.explorer = explorer or RandomCategoryExplorer()
+        self.explorer = explorer or build_explorer(config.mab)
 
     # ---- public ----------------------------------------------------------
 
@@ -159,9 +163,22 @@ class Reranker:
 
         slot_pools = self._build_slot_pools(candidates, main, now, new_item_pool, n)
 
-        items, relaxed = self._fill(main, slot_pools, n)
+        items, relaxed, arms = self._fill(main, slot_pools, n)
         elapsed = (time.perf_counter() - start) * 1000
-        return RerankResult(items, is_cold, elapsed, relaxed)
+        return RerankResult(items, is_cold, elapsed, relaxed, arms)
+
+    def record_feedback(self, result: RerankResult, clicked_ids: Collection[str]) -> int:
+        """진열된 MAB 탐색 칸의 클릭 여부를 선택기 통계에 기록한다. 기록한 칸 수를 돌려준다.
+
+        신규 상품 칸도 is_exploration=True지만 MAB가 고른 칸이 아니므로 기록하지 않는다.
+        선택기가 피드백을 받지 않으면(무작위 기준선 등) 아무것도 하지 않는다.
+        """
+        record = getattr(self.explorer, "record_feedback", None)
+        if record is None:
+            return 0
+        for pid, arm in result.exploration_arms.items():
+            record(arm, pid in clicked_ids)
+        return len(result.exploration_arms)
 
     # ---- 풀 구성 ---------------------------------------------------------
 
@@ -182,14 +199,15 @@ class Reranker:
             new_items = build_new_item_pool(candidates, new_item_pool, now,
                                             cfg.new_item_max_age_days)
             for pos in new_pos:
-                pools[pos] = (new_items, "new_item", False)
+                # 명세(동료평가 Context 3)는 신규 상품 노출도 탐색 칸으로 본다
+                pools[pos] = (new_items, "new_item", True)
 
         if exp_pos:
             # 메인 상위 top_n 밖에서 탐색해야 의미가 있다
             outside = list(main[top_n:]) or list(main)
             explored = self.explorer.pick(outside, len(exp_pos) * 3)  # 다양성 때문에 여유분 확보
             for pos in exp_pos:
-                pools[pos] = (explored, "mab_exploration", True)
+                pools[pos] = (explored, MAB_REASON, True)
 
         return pools
 
@@ -200,12 +218,13 @@ class Reranker:
         main: Sequence[Candidate],
         slot_pools: SlotPools,
         top_n: int,
-    ) -> tuple[list[RerankedItem], list[int]]:
+    ) -> tuple[list[RerankedItem], list[int], dict[str, str]]:
         cfg = self.config
         used: set[str] = set()
         cats: list[str] = []
         out: list[RerankedItem] = []
         relaxed: list[int] = []
+        arms: dict[str, str] = {}
 
         for pos in range(top_n):
             # 시도 순서: 슬롯 풀 → 메인
@@ -225,8 +244,15 @@ class Reranker:
             used.add(dedupe_key(cand, cfg.dedupe_field))
             cats.append(getattr(cand, cfg.category_field))
             out.append(RerankedItem(cand.product_id, cand.score, reason or cand.reason, is_exp))
+            if reason == MAB_REASON:
+                arms[cand.product_id] = self._arm_of(cand)
 
-        return out, relaxed
+        return out, relaxed, arms
+
+    def _arm_of(self, c: Candidate) -> str:
+        # 주입된 선택기의 arm 기준을 우선 (config.mab과 다르게 만들었을 수 있음)
+        arm_of = getattr(self.explorer, "arm_of", None)
+        return arm_of(c) if arm_of else getattr(c, self.config.mab.arm_field)
 
     def _choose(
         self,

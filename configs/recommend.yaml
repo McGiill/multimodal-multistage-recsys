@@ -22,10 +22,20 @@ ranking:
   batch_size: 2048
 
 session:
-  encoder: gru            # gru | transformer
+  encoder: gru            # gru (명세: GRU 또는 Transformer 중 하나)
+  embedding_dim: 64       # 상품 임베딩 = 세션 벡터 차원
   hidden_dim: 64
-  max_len: 10
-  long_short_alpha: 0.6   # final = alpha*long(user tower) + (1-alpha)*short(session)
+  max_len: 10             # 세션 최근 클릭 몇 개까지 볼지
+  min_len: 2              # 학습에 쓰는 세션 최소 조회 수 (다음 상품 맞히기라 2 이상)
+  long_short_alpha: 0.6   # final = alpha*long(user tower) + (1-alpha)*short(session), 둘 다 코사인
+  temperature: 0.1        # 학습 softmax 온도 (코사인 점수 → logit)
+  epochs: 5
+  lr: 0.001
+  batch_size: 512
+  eval_k: 20              # 다음 상품 맞히기 HitRate@k / MRR@k
+  n_candidates: 50        # 세션 관심으로 Stage 1 후보에 추가할 상품 수
+  interest_field: category_l2   # session_interest 라벨 (명세 예시: "아우터")
+  model_file: session_encoder.pt
 
 reranking:
   category_field: category_l2       # 다양성 기준 category_l1 | category_l2 | category_l3

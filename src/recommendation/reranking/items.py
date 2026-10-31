@@ -49,6 +49,8 @@ class RerankResult:
     reranking_ms: float
     # 후보가 부족해 다양성 규칙을 지키지 못한 위치 (로그·디버깅용)
     diversity_relaxed_positions: list[int] = field(default_factory=list)
+    # MAB가 고른 칸의 product_id → arm. 클릭 피드백은 이 칸만 기록 (신규 상품 칸 제외)
+    exploration_arms: dict[str, str] = field(default_factory=dict)
 
 
 def with_reason(c: Candidate, reason: str) -> Candidate:
