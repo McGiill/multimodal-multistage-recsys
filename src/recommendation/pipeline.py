@@ -1,9 +1,7 @@
-"""Stage1 후보 → Stage2 CVR. Stage3는 미연결이며 is_exploration=False."""
+"""Stage1 후보 → Stage2 CVR → Stage3 Re-ranking (다양성·신규 상품·MAB 탐색 슬롯)."""
 
 import time
 from datetime import UTC, datetime
-
-import numpy as np
 
 from src.common.schemas import (
     PipelineLatency,
@@ -12,6 +10,7 @@ from src.common.schemas import (
     SessionContext,
 )
 from src.recommendation.ranking.features import stamp
+from src.recommendation.reranking.stage2 import get_rerank_service
 from src.recommendation.strategies.base import RecommendStrategy, register
 from src.serving.model_loader import get_recommendation_models
 
@@ -29,16 +28,23 @@ class MultiStageStrategy(RecommendStrategy):
         )
         candidate = time.perf_counter()
         scores = models.score(ids, state, now)
-        order = np.argsort(-scores, kind="stable")[:top_n]
         ranked = time.perf_counter()
+        # Stage 3: top_n으로 자르기 전 후보 전체를 넘긴다 (탐색 칸은 상위 top_n 밖에서 고름)
+        rerank = get_rerank_service(models)
+        new_ids = rerank.new_item_ids(now)
+        result = rerank.rerank(
+            ids, scores, state, now, top_n,
+            new_ids=new_ids, new_scores=models.score(new_ids, state, now),
+        )
+        reranked = time.perf_counter()
         items = [
             RecommendationItem(
-                product_id=models.store.item_ids[ids[i] - 1],
-                score=float(scores[i]),
-                reason="cvr",
-                is_exploration=False,
+                product_id=r.product_id,
+                score=r.score,
+                reason=r.reason,
+                is_exploration=r.is_exploration,
             )
-            for i in order
+            for r in result.items
         ]
         return RecommendResponse(
             user_id=user_id,
@@ -46,8 +52,8 @@ class MultiStageStrategy(RecommendStrategy):
             pipeline_latency=PipelineLatency(
                 candidate_ms=(candidate - begin) * 1000,
                 ranking_ms=(ranked - candidate) * 1000,
-                reranking_ms=0,
-                total_ms=(ranked - begin) * 1000,
+                reranking_ms=(reranked - ranked) * 1000,
+                total_ms=(reranked - begin) * 1000,
             ),
             session_context=SessionContext(
                 recent_clicks=[models.store.item_ids[i - 1] for i in state[0] if i > 0]

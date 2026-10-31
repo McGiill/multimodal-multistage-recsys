@@ -181,15 +181,14 @@ def test_api_real_models_and_time_validation(trained, monkeypatch):
         body = response.json()
         assert len(body["recommendations"]) == 10
         assert all(int(r["product_id"][1:]) < 550 for r in body["recommendations"])
-        scores = [r["score"] for r in body["recommendations"]]
-        assert scores == sorted(scores, reverse=True) and all(
-            0 <= p <= 1 for p in scores
-        )
-        assert all(
-            r["reason"] == "cvr" and not r["is_exploration"]
-            for r in body["recommendations"]
-        )
-        assert body["pipeline_latency"]["reranking_ms"] == 0
+        recs = body["recommendations"]
+        assert all(0 <= r["score"] <= 1 for r in recs)
+        # Stage 3: 점수 순서를 바꿀 수 있지만 값은 Stage 2 CVR 그대로
+        assert {r["reason"] for r in recs} <= {"cvr", "new_item", "mab_exploration"}
+        assert any(r["reason"] == "mab_exploration" and r["is_exploration"] for r in recs)
+        assert all(r["is_exploration"] == (r["reason"] != "cvr") for r in recs)
+        assert len({r["product_id"] for r in recs}) == len(recs)
+        assert body["pipeline_latency"]["reranking_ms"] > 0
         assert (
             client.get(
                 "/api/recommend", params={**args, "at": "2026-01-01T00:00:00Z"}
@@ -211,6 +210,29 @@ def test_api_real_models_and_time_validation(trained, monkeypatch):
             ).status_code
             == 200
         )
+
+
+def test_api_stage3_rules(trained, monkeypatch):
+    """Stage 3 연결: 연속 3개 금지, 신규 상품 칸, 이력 없는 사용자도 Top-N 채움."""
+    from src.recommendation.reranking import max_run_length
+
+    _, bundle, models = trained
+    monkeypatch.setenv("REC_MODEL_DIR", str(bundle))
+    monkeypatch.setenv("PRELOAD_MODELS", "0")
+    from src.serving.main import app
+
+    category = models.store.products.set_index("product_id")["category_l2"]
+    with TestClient(app) as client:
+        # 550번 이후 상품은 2026-01-29 등록 → 1/30 요청에서는 신규 상품
+        args = {"user_id": "U00001", "top_n": 10, "at": "2026-01-30T12:00:00Z"}
+        recs = client.get("/api/recommend", params=args).json()["recommendations"]
+        assert len(recs) == 10
+        assert max_run_length([category[r["product_id"]] for r in recs]) <= 2
+        new = [r for r in recs if r["reason"] == "new_item"]
+        assert new and all(int(r["product_id"][1:]) >= 550 and r["is_exploration"] for r in new)
+
+        cold = client.get("/api/recommend", params={**args, "user_id": "not_registered"})
+        assert cold.status_code == 200 and len(cold.json()["recommendations"]) == 10
 
 
 def test_holdout_history_frozen_and_test_events_not_saved(trained):
