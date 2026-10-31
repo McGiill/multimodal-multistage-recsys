@@ -22,7 +22,3 @@ artifacts/indexes/*
 .DS_Store
 .idea/
 .vscode/
-
-# 개인 메모 (커밋 안 함)
-CLAUDE.local.md
-WORKLOG.local.md
