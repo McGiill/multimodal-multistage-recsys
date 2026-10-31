@@ -21,6 +21,12 @@ from src.recommendation.reranking.mab import (
     build_explorer,
 )
 from src.recommendation.reranking.reranker import Reranker, RerankConfig, slot_positions
+from src.recommendation.reranking.stage2 import (
+    RerankService,
+    from_unix,
+    get_rerank_service,
+    history_count,
+)
 
 __all__ = [
     "ArmStats",
@@ -33,11 +39,15 @@ __all__ = [
     "RandomCategoryExplorer",
     "RerankConfig",
     "RerankResult",
+    "RerankService",
     "RerankedItem",
     "Reranker",
     "StatsStore",
     "UCBExplorer",
     "build_explorer",
+    "from_unix",
+    "get_rerank_service",
+    "history_count",
     "load_catalog",
     "max_run_length",
     "prepare_catalog",
