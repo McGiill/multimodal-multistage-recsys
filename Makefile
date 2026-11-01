@@ -1,4 +1,4 @@
-.PHONY: install catalog data split train index search-eval-set eval-search eval bench up down test lint
+.PHONY: install catalog data split train index search-eval-set eval-search eval-style-search eval bench up down test lint
 
 install:        ## 로컬 개발 환경 설치
 	pip install -r requirements/dev.txt
@@ -20,6 +20,9 @@ search-eval-set: ## 검색 평가셋(쿼리 → 정답 상품) 생성
 
 eval-search:    ## 검색 평가 (CLIP vs BM25)
 	python -m src.evaluation.eval_search
+
+eval-style-search: ## 스타일 사진 검색 평가 (상품 사진 쿼리에서 기존 이미지 검색과 비교)
+	python -m src.evaluation.eval_style_search
 
 train:          ## Two-Tower → DeepFM → Session Encoder 학습
 	python -m src.recommendation.candidate.train

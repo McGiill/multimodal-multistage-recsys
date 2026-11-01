@@ -114,6 +114,17 @@ def test_hybrid_search(searcher) -> None:
     assert result.scores == sorted(result.scores, reverse=True)
 
 
+def test_search_within_conditions(searcher) -> None:
+    rows = searcher.select_rows(l3=["Vest top", "Boots"])
+    assert rows.tolist() == [0, 1, 4]
+    assert searcher.select_rows(l3=["Vest top"], colors=["White"]).tolist() == [1]
+    assert searcher.select_rows(l1=["Menswear"]).tolist() == []
+
+    result = searcher.rank_rows(searcher._image_emb_for_test[4], rows, top_k=2)
+    assert result.product_ids[0] == "hm_0000000004" and result.total_count == 3
+    assert result.items[0]["name"] == "Ankle boots" and result.scores == sorted(result.scores, reverse=True)
+
+
 def test_bm25_baseline() -> None:
     ids, scores = BM25Searcher(_catalog()).search("black strap top", top_k=2)
     assert ids[0] in {"hm_0000000000", "hm_0000000001"}

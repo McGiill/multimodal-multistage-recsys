@@ -122,6 +122,46 @@ class SearchResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# 스타일 사진 검색 API  (POST /api/search/style) — 사람이 옷을 입은 사진 (+ 선택 텍스트)
+# ---------------------------------------------------------------------------
+class StyleSearchResultItem(SearchResultItem):
+    category: str                        # 소분류 (category_l3)
+    color: str
+
+
+class StyleSearchGroup(BaseModel):
+    slot: str                            # 부위: outer / top / dress / bottom / shoes / ... (옷을 못 찾았으면 "all")
+    slot_name: str                       # 화면 표시용 (아우터, 상의, ...)
+    kind: str | None                     # 사진에서 찾은 옷 종류 (configs/style_search.yaml의 kinds)
+    basis: str                           # photo_item: 사진 속 그 옷 기준 | photo_style: 사진 전체 분위기 기준 | whole_photo
+    box: list[int] | None                # 사진 속 위치 [x1, y1, x2, y2]
+    box_source: str | None               # detector: 검출 | low_score: 콕 집은 부위라 낮은 점수 검출도 사용
+                                         # | grounding: Grounding DINO로 다시 찾음 | user: 사용자가 지정한 영역
+    detection_score: float | None
+    filters: list[str]                   # 적용한 조건 (예: "color:red", "sleeve:down")
+    results: list[StyleSearchResultItem]
+    total_count: int                     # 조건을 만족한 후보 수
+
+
+class StyleDetection(BaseModel):
+    kind: str | None
+    slot: str
+    slot_name: str
+    score: float | None
+    box: list[int]
+    source: str                          # StyleSearchGroup.box_source와 같음
+
+
+class StyleSearchResponse(BaseModel):
+    intent: str                          # style: 사진 속 옷 전부 | find: 지정한 옷 | match: 어울리는 옷
+    photo_type: str                      # style: 사람이 입은 사진 (옷 검출) | product: 옷만 찍은 사진 (사진 전체가 기준)
+    audience: str | None                 # 제한한 고객층 (women / men / kids), 제한 안 했으면 None
+    groups: list[StyleSearchGroup]
+    detections: list[StyleDetection]     # 사진에서 찾은 옷 전부 (화면에서 영역을 골라 다시 검색할 때)
+    latency_ms: float
+
+
+# ---------------------------------------------------------------------------
 # 추천 API  (GET /api/recommend) — 과제 필수 필드:
 #   user_id, recommendations[], pipeline_latency, session_context
 # ---------------------------------------------------------------------------

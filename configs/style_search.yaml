@@ -1,0 +1,228 @@
+# 스타일 사진 검색 (POST /api/search/style)
+# 사람이 옷을 입고 있는 사진 (+ 선택 텍스트) → 사진 속 옷을 찾아 옷별로 비슷한 상품 검색
+# 상품 임베딩·인코더는 configs/search.yaml의 검색 모델을 그대로 쓴다.
+
+default_top_k: 10
+
+detector:
+  model_name: valentinafeve/yolos-fashionpedia   # Fashionpedia(사람 착용 사진 4.6만 장)로 학습된 YOLOS, transformers로 로딩
+  device: cpu
+  shortest_edge: 512      # 검출 모델 입력 크기 (짧은 변). CPU 1스레드 기준 512: 약 420ms / 384: 약 190ms,
+                          # 하지만 384는 Fashionpedia val 검출 F1이 0.585 → 0.51로 떨어져서 (신발 recall 0.67 → 0.50) 512 사용
+  longest_edge: 1333      # 긴 변 상한 (모델 기본값)
+  threshold: 0.5          # 이 점수 미만 검출은 버림
+  min_area: 0.003         # 사진 면적 대비 이보다 작은 박스는 버림 (오검출 많음)
+  nms_iou: 0.6            # 같은 자리에 겹친 다른 라벨(예: top과 sweater)은 점수 높은 쪽만
+  crop_margin: 0.08       # 잘라낼 때 박스 둘레 여백 (박스 크기 대비)
+  # threshold / min_area는 Fashionpedia val 절반으로 정함 (F1 0.580, 0.3–0.5 × 0.001–0.01 탐색, 2026-10-27)
+  requested_threshold: 0.1  # 텍스트로 콕 집은 부위("상의")는 사진에 있다고 보고, 이 점수 이상이면 그 부위 최고점 박스를 쓴다
+  # Fashionpedia val 579장, 그 부위 박스를 맞게 찾는 비율: 상의 47% → 74%, 아우터 40% → 74%, 하의 69% → 84%
+
+grounding:                # Grounding DINO: 단어("pants.")를 주면 그 물체를 찾는 검출 모델 (패션 전용 아님, 어떤 단어든 가능)
+  mode: fallback          # fallback: 콕 집은 부위를 YOLOS가 requested_threshold로도 못 찾을 때만
+                          # always: 콕 집은 부위는 처음부터 (GPU 서버용) | off: 안 씀
+  model_name: IDEA-Research/grounding-dino-tiny
+  device: auto            # 1장: CPU 약 3.2초 / Mac GPU(mps) 약 0.6초. 처음 쓸 때 로딩
+  threshold: 0.2
+  text_threshold: 0.2
+  # Street2Shop 1,087장 (사진 + 찾을 종류 → 그 상품), 정답 박스와 IoU≥0.5 / FashionCLIP R@1:
+  #   YOLOS 0.5 이상만 45.5% / 0.313 → + 낮은 점수 61.2% / 0.365 → + Grounding DINO(11.6%만 호출) 69.3% / 0.392
+  #   (Grounding DINO만 쓰면(always) 75.0% / 0.399. 성능은 거의 같고 느린 모델 호출이 1/9로 줄어서 fallback 사용, 2026-10-30)
+  phrases:                # 옷 종류(kind) → 찾을 단어. 부위로 요청하면("상의") 그 부위 종류의 단어를 합친다
+    shirt: shirt. blouse.
+    tee: t-shirt. top. sweatshirt.
+    knit: sweater.
+    hoodie: hoodie.
+    cardigan: cardigan.
+    vest: vest.
+    jacket: jacket.
+    coat: coat.
+    pants: pants.
+    shorts: shorts.
+    skirt: skirt.
+    dress: dress.
+    jumpsuit: jumpsuit.
+    shoes: shoe.
+    bag: bag.
+    hat: hat.
+    glasses: glasses.
+    scarf: scarf.
+    belt: belt.
+    tie: tie.
+    gloves: glove.
+    watch: watch.
+    hair: headband. hair accessory.
+    socks: socks.
+    tights: tights.
+
+photo_type:               # 사람이 입은 스타일 사진인지, 옷만 찍은 상품 사진인지 (CLIP 문장 비교)
+  prompts: ["a photo of a person wearing clothes", "a product photo of clothing on a white background"]
+  margin: 0.0             # 사람 점수 - 상품 점수가 이보다 커야 스타일 사진
+  # 상품 사진이면 옷 검출을 하지 않고 사진 전체를 그 상품으로 본다. 검출 모델이 착용 사진으로 학습돼서
+  # 상품 사진의 종류를 30%가량 틀리고, 틀린 종류로 좁히면 정답이 빠진다 (H&M 이미지 쿼리 MRR 0.66 → 0.48).
+
+audience:                 # 사진 속 사람에 맞춰 고객층(category_l1) 제한 → 성인 사진에 아동복이 섞이지 않게
+  mode: auto              # auto: 스타일 사진이면 사진으로 판단 | off: 제한 안 함 (요청에서 women / men / kids / all로 직접 지정 가능)
+  min_prob: 0.6           # 가장 그럴듯한 고객층 확률이 이보다 낮으면 제한 안 함
+  groups:
+    women: {prompt: "a photo of a woman", category_l1: [Ladieswear, Divided, Sport]}
+    men: {prompt: "a photo of a man", category_l1: [Menswear, Sport]}
+    kids: {prompt: "a photo of a child", category_l1: [Baby/Children]}
+
+# 옷 부위(slot): 결과를 묶는 단위. 순서 = 응답의 그룹 순서
+slots:
+  outer: 아우터
+  top: 상의
+  dress: 원피스
+  bottom: 하의
+  shoes: 신발
+  bag: 가방
+  hat: 모자
+  accessory: 액세서리
+  legwear: 양말·타이츠
+
+search_by_kind_slots: [accessory, legwear]
+# 사진에서 찾은 옷은 그 부위의 소분류 전체에서 검색한다 (검출 모델이 셔츠 ↔ 티셔츠, 바지 ↔ 반바지를 헷갈려도 정답이 안 빠지게).
+# 위 부위는 종류끼리 너무 달라서 (벨트 ↔ 스카프) 검출한 종류의 소분류에서만 검색한다.
+# 텍스트로 종류를 지정하면 ("바지") 그 종류에서만 검색한다.
+
+# 옷 종류(kind): 검출 라벨(Fashionpedia) → 검색할 카탈로그 소분류(category_l3)
+kinds:
+  shirt: {slot: top, labels: ["shirt, blouse"], l3: [Shirt, Blouse]}
+  tee: {slot: top, labels: ["top, t-shirt, sweatshirt"], l3: [T-shirt, Top, Vest top, Polo shirt, Bodysuit, Hoodie, Sweater]}
+  knit: {slot: top, labels: [sweater], l3: [Sweater, Hoodie, Cardigan]}
+  hoodie: {slot: top, labels: [], l3: [Hoodie]}
+  cardigan: {slot: top, labels: [cardigan], l3: [Cardigan, Sweater]}
+  vest: {slot: top, labels: [vest], l3: [Tailored Waistcoat, Outdoor Waistcoat, Vest top]}
+  jacket: {slot: outer, labels: [jacket], l3: [Jacket, Blazer, Coat]}
+  coat: {slot: outer, labels: [coat, cape], l3: [Coat, Jacket]}
+  pants: {slot: bottom, labels: [pants], l3: [Trousers, Leggings/Tights, Outdoor trousers]}
+  shorts: {slot: bottom, labels: [shorts], l3: [Shorts]}
+  skirt: {slot: bottom, labels: [skirt], l3: [Skirt]}
+  dress: {slot: dress, labels: [dress], l3: [Dress]}
+  jumpsuit: {slot: dress, labels: [jumpsuit], l3: [Jumpsuit/Playsuit, Dungarees]}
+  shoes:
+    slot: shoes
+    labels: [shoe]
+    l3: [Sneakers, Boots, Bootie, Sandals, Heeled sandals, Ballerinas, Pumps, Flat shoe, Flat shoes, Heels, Wedge,
+         Moccasins, Other shoe, Slippers, Flip flop]
+  bag: {slot: bag, labels: ["bag, wallet"], l3: [Bag, Wallet, Bumbag, Cross-body bag, Shoulder bag, Tote bag, Weekend/Gym bag]}
+  hat: {slot: hat, labels: [hat], l3: [Hat/beanie, Hat/brim, Cap/peaked, Beanie, Bucket hat, Cap, Felt hat, Straw hat]}
+  glasses: {slot: accessory, labels: [glasses], l3: [Sunglasses, Eyeglasses]}
+  scarf: {slot: accessory, labels: [scarf], l3: [Scarf]}
+  belt: {slot: accessory, labels: [belt], l3: [Belt]}
+  tie: {slot: accessory, labels: [tie], l3: [Tie]}
+  gloves: {slot: accessory, labels: [glove], l3: [Gloves]}
+  watch: {slot: accessory, labels: [watch], l3: [Watch]}
+  hair: {slot: accessory, labels: ["headband, head covering, hair accessory"], l3: [Hair/alice band, Alice band, Hairband, Headband, Hair clip]}
+  socks: {slot: legwear, labels: [sock, leg warmer], l3: [Socks, Leg warmers]}
+  tights: {slot: legwear, labels: ["tights, stockings"], l3: [Underwear Tights, Leggings/Tights]}
+
+# 텍스트 해석 사전 (src/search/query_parser.py). 긴 단어부터 찾아서 "반바지"가 "바지"로 잡히지 않게 한다.
+# 영어 단어는 단어 경계로 찾는다 (예: "red"가 "shredded" 안에서 잡히지 않게).
+targets:                  # 찾을 옷: kinds(종류) 또는 slots(부위 전체)
+  - {words: [바지, 팬츠, 슬랙스, 청바지, 데님 바지, 조거, pants, trousers, jeans, slacks], kinds: [pants]}
+  - {words: [반바지, 숏팬츠, 쇼츠, shorts], kinds: [shorts]}
+  - {words: [치마, 스커트, skirt], kinds: [skirt]}
+  - {words: [하의, bottom, bottoms], slots: [bottom]}
+  - {words: [셔츠, 블라우스, 남방, shirt, blouse], kinds: [shirt]}
+  - {words: [티셔츠, 반팔티, 긴팔티, 맨투맨, 탑, t-shirt, tee, tshirt, sweatshirt], kinds: [tee]}
+  - {words: [니트, 스웨터, knit, sweater], kinds: [knit]}
+  - {words: [후드티, 후디, 후드, hoodie], kinds: [hoodie]}
+  - {words: [가디건, cardigan], kinds: [cardigan]}
+  - {words: [조끼, 베스트, vest], kinds: [vest]}
+  - {words: [상의, top, tops], slots: [top]}
+  - {words: [자켓, 재킷, 블레이저, 점퍼, jacket, blazer], kinds: [jacket]}
+  - {words: [코트, coat], kinds: [coat]}
+  - {words: [아우터, outer, outerwear], slots: [outer]}
+  - {words: [원피스, 드레스, dress], kinds: [dress]}
+  - {words: [점프수트, 멜빵, jumpsuit, overalls], kinds: [jumpsuit]}
+  - {words: [신발, 운동화, 스니커즈, 구두, 부츠, 샌들, 로퍼, 힐, shoes, shoe, sneakers, boots, sandals, heels], kinds: [shoes]}
+  - {words: [가방, 백팩, 토트백, 숄더백, bag, backpack], kinds: [bag]}
+  - {words: [모자, 볼캡, 비니, 버킷햇, hat, cap, beanie], kinds: [hat]}
+  - {words: [선글라스, 안경, sunglasses, glasses], kinds: [glasses]}
+  - {words: [스카프, 머플러, 목도리, scarf], kinds: [scarf]}
+  - {words: [벨트, belt], kinds: [belt]}
+  - {words: [양말, socks], kinds: [socks]}
+
+intents:                  # 이 단어가 있으면 해당 요청. 없으면: 찾을 옷이 있으면 find, 없으면 style
+  match: [어울리, 어울릴, 매치, 코디, 같이 입, 받쳐 입, 매칭, match, matching]
+  style: [스타일, 느낌, 분위기, 비슷한 옷, style, look, vibe]
+match_target_before: [go with, goes with, pair with, to wear with]   # 영어 "pants that go with this"처럼 찾을 옷이 앞에 오는 표현
+match_default_slots: [top, bottom, outer, shoes]   # "어울리는 거"처럼 찾을 옷 없이 match면, 사진에 없는 이 부위들을 채운다
+
+colors:                   # 색 단어 → 카탈로그 color 값 (H&M colour_group_name)
+  black: {words: [검정, 검은, 까만, 블랙, black], values: [Black]}
+  white: {words: [흰, 하얀, 화이트, 아이보리, white, ivory], values: [White, Off White]}
+  grey: {words: [회색, 그레이, 차콜, grey, gray, charcoal], values: [Grey, Dark Grey, Light Grey]}
+  beige: {words: [베이지, 크림, beige, cream], values: [Beige, Light Beige, Dark Beige, Greyish Beige]}
+  brown: {words: [갈색, 브라운, 카멜, brown, camel], values: [Yellowish Brown, Bronze/Copper]}
+  red: {words: [빨간, 빨강, 레드, 와인, red, burgundy], values: [Red, Dark Red, Light Red, Other Red]}
+  pink: {words: [분홍, 핑크, pink], values: [Pink, Light Pink, Dark Pink, Other Pink]}
+  orange: {words: [주황, 오렌지, orange], values: [Orange, Light Orange, Dark Orange, Other Orange]}
+  yellow: {words: [노란, 노랑, 옐로우, 머스타드, yellow, mustard], values: [Yellow, Light Yellow, Dark Yellow, Other Yellow]}
+  green: {words: [초록, 녹색, 그린, green], values: [Green, Dark Green, Light Green, Other Green]}
+  khaki: {words: [카키, 올리브, khaki, olive], values: [Greenish Khaki]}
+  navy: {words: [남색, 네이비, navy], values: [Dark Blue]}
+  sky: {words: [하늘색, 스카이블루, sky blue], values: [Light Blue]}
+  blue: {words: [파란, 파랑, 블루, 청색, blue], values: [Blue, Light Blue, Dark Blue, Other Blue]}
+  mint: {words: [민트, 청록, 터콰이즈, mint, turquoise], values: [Turquoise, Light Turquoise, Dark Turquoise, Other Turquoise]}
+  purple: {words: [보라, 퍼플, 라벤더, purple, lavender], values: [Purple, Light Purple, Dark Purple, Other Purple]}
+  gold: {words: [금색, 골드, gold], values: [Gold]}
+  silver: {words: [은색, 실버, silver], values: [Silver]}
+
+# 디테일 조절: "소매 더 짧게", "총장은 길게" → 디테일 점수(CLIP 사진 ↔ 반대말 두 문장)로 기준 옷보다 많은/적은 상품만 남김
+# 점수 = 상품 사진 · (more 문장 - less 문장). 라벨 없이 요청 시점에 계산한다.
+details:
+  sleeve:
+    words: [소매, 팔길이, 팔 길이, sleeve, sleeves]
+    slots: [top, outer, dress]
+    anchors: {default: ["a garment with long sleeves", "a sleeveless garment"]}
+  length:
+    words: [기장, 총장, 길이, length]
+    slots: [top, outer, bottom, dress]
+    anchors:
+      default: ["a long length garment", "a short cropped garment"]
+      bottom: ["full length long trousers", "cropped short length trousers"]
+      dress: ["a long maxi length dress", "a short mini length dress"]
+  rise:
+    words: [밑위, 허리선, rise, waistline]
+    slots: [bottom]
+    anchors: {default: ["high-waisted trousers", "low-rise trousers"]}
+  fit:
+    words: [핏, fit]
+    slots: [top, outer, bottom, dress]
+    anchors: {default: ["a loose oversized fit garment", "a slim fitted garment"]}
+directions:               # 디테일 단어와 같이 쓰는 방향 (up = more 문장 쪽)
+  up: [길게, 긴, 길어, 길었, 높게, 높은, 높아, longer, higher, looser]
+  down: [짧게, 짧은, 짧아, 짧았, 낮게, 낮은, 낮아, shorter, lower, tighter]
+detail_shortcuts:         # 단어 하나에 디테일과 방향이 같이 들어 있는 경우
+  반팔: [sleeve, down]
+  민소매: [sleeve, down]
+  나시: [sleeve, down]
+  긴팔: [sleeve, up]
+  크롭: [length, down]
+  롱: [length, up]
+  하이웨이스트: [rise, up]
+  로우라이즈: [rise, down]
+  오버핏: [fit, up]
+  루즈: [fit, up]
+  와이드: [fit, up]
+  넉넉: [fit, up]
+  슬림: [fit, down]
+  타이트: [fit, down]
+  short sleeve: [sleeve, down]
+  short sleeves: [sleeve, down]
+  sleeveless: [sleeve, down]
+  long sleeve: [sleeve, up]
+  long sleeves: [sleeve, up]
+  cropped: [length, down]
+  high waist: [rise, up]
+  high-waisted: [rise, up]
+  oversized: [fit, up]
+  loose: [fit, up]
+  wide: [fit, up]
+  slim: [fit, down]
+  tight: [fit, down]
+default_detail: length    # 방향만 있고 디테일 단어가 없으면 ("더 짧은 거") 기장으로 본다
+detail_margin: 0.25       # 기준 옷보다 (후보 점수 표준편차 × 이 값) 이상 차이 나는 상품만 남김 (부족하면 0으로 완화)
