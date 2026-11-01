@@ -1,0 +1,47 @@
+[
+  {
+    "file": "data/splits/meta.json",
+    "sha256": "cdc227d025460cca403c04a66d47e1473bdd43e941c45acc6446ca2c7d89ed62",
+    "bytes": 1375
+  },
+  {
+    "file": "data/splits/test_events.parquet",
+    "sha256": "7871c14138bf88666088bed87d0b0193eb0537ad5f43321a236ec3ae17a4ffdd",
+    "bytes": 3317666
+  },
+  {
+    "file": "data/splits/test_impressions.parquet",
+    "sha256": "445505f9d7640e0a9b89483596d8c0b7262ec97e394c508f5706323b2c0a5bca",
+    "bytes": 6364834
+  },
+  {
+    "file": "data/splits/train_events.parquet",
+    "sha256": "1f5bf33b12ed868317ba42c072e82bdc6aeaedcf8091529d4d92108c116ae3ba",
+    "bytes": 21280419
+  },
+  {
+    "file": "data/splits/train_impressions.parquet",
+    "sha256": "1911f0783f7472038a5cf97a5475d0e791f124d60d4ae2790dd6f8bda6193e98",
+    "bytes": 41949797
+  },
+  {
+    "file": "data/splits/valid_events.parquet",
+    "sha256": "6541abb89f12f7483808a49d5f120e00a908f707a78c48e08082ad0f859b9d61",
+    "bytes": 3439960
+  },
+  {
+    "file": "data/splits/valid_impressions.parquet",
+    "sha256": "8e7d152562ad9bc552bed7602d5842d47561cd92392721d547cc4a6284ec0814",
+    "bytes": 6637767
+  },
+  {
+    "file": "data/processed/products.parquet",
+    "sha256": "f426aa36838c71b7f27ced736719fcd8b6238c04d168062fb1c91bb9f1032270",
+    "bytes": 3631612
+  },
+  {
+    "file": "data/processed/users.parquet",
+    "sha256": "706177d35e43aa5eb35c8b640691911115564302d1d13e3a205eec950c92772f",
+    "bytes": 160478
+  }
+]

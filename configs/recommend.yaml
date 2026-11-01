@@ -1,4 +1,7 @@
 seed: 42
+version: stage12-cvr-team-v20261022
+threads: 4
+validation_limit: 10000
 
 strategy: multistage      # multistage | two_tower_only | popularity | recency  (strategies/registry)
 
@@ -13,6 +16,8 @@ candidate:
   faiss_index_type: hnsw
 
 ranking:
+  objective: cvr
+  cvr_window_seconds: 86400
   model: deepfm           # deepfm | wide_deep
   embedding_dim: 16
   dnn_hidden: [256, 128]

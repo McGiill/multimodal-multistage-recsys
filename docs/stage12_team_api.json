@@ -1,0 +1,102 @@
+{
+  "status": 200,
+  "prediction_at": "2026-03-24T00:00:00+00:00",
+  "unknown_user_status": 200,
+  "before_model_cutoff_status": 400,
+  "response": {
+    "user_id": "U00001",
+    "recommendations": [
+      {
+        "product_id": "hm_0733097010",
+        "score": 0.01682605780661106,
+        "reason": "cvr",
+        "is_exploration": false
+      },
+      {
+        "product_id": "hm_0547264009",
+        "score": 0.013571875169873238,
+        "reason": "cvr",
+        "is_exploration": false
+      },
+      {
+        "product_id": "hm_0850244003",
+        "score": 0.013073590584099293,
+        "reason": "cvr",
+        "is_exploration": false
+      },
+      {
+        "product_id": "hm_0832473001",
+        "score": 0.012379755266010761,
+        "reason": "cvr",
+        "is_exploration": false
+      },
+      {
+        "product_id": "hm_0616849016",
+        "score": 0.01190928090363741,
+        "reason": "cvr",
+        "is_exploration": false
+      },
+      {
+        "product_id": "hm_0873538001",
+        "score": 0.011839707382023335,
+        "reason": "cvr",
+        "is_exploration": false
+      },
+      {
+        "product_id": "hm_0850244005",
+        "score": 0.011791536584496498,
+        "reason": "cvr",
+        "is_exploration": false
+      },
+      {
+        "product_id": "hm_0832482004",
+        "score": 0.01178013440221548,
+        "reason": "cvr",
+        "is_exploration": false
+      },
+      {
+        "product_id": "hm_0895002002",
+        "score": 0.011601932346820831,
+        "reason": "cvr",
+        "is_exploration": false
+      },
+      {
+        "product_id": "hm_0876053003",
+        "score": 0.011520979925990105,
+        "reason": "cvr",
+        "is_exploration": false
+      }
+    ],
+    "pipeline_latency": {
+      "candidate_ms": 6.237399997189641,
+      "ranking_ms": 2.0988000032957643,
+      "reranking_ms": 0.0,
+      "total_ms": 8.336200000485405
+    },
+    "session_context": {
+      "recent_clicks": [
+        "hm_0654913002",
+        "hm_0832473001",
+        "hm_0768333002",
+        "hm_0877961004",
+        "hm_0767862001",
+        "hm_0863937003",
+        "hm_0757828001",
+        "hm_0622955001",
+        "hm_0767834002",
+        "hm_0824764005",
+        "hm_0849103003",
+        "hm_0876053003",
+        "hm_0559677001",
+        "hm_0504152009",
+        "hm_0727880007",
+        "hm_0817477003",
+        "hm_0756322001",
+        "hm_0898692003",
+        "hm_0859808001",
+        "hm_0833530002"
+      ],
+      "session_interest": null
+    }
+  }
+}

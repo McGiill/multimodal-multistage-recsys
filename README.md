@@ -1,5 +1,8 @@
 # Multimodal Search & Multi-Stage Recommender
 
+> **2026-10-26 Stage 1/2 연결:** 팀 공유 데이터 v20261022로 Two-Tower → FAISS → DeepFM CVR 학습·추천 API 검증을 완료했습니다. [실행 방법 및 구현 설명](docs/stage12_integration.md) · [실측 결과](docs/stage12_team_result.md) · [구현 검토 보고서 PDF](docs/Stage12_CVR_구현검토보고서.pdf). 공유 데이터를 받은 경우 아래 전체 데이터 생성 절차 대신 안내 문서의 `run_stage12.ps1 -Action demo`를 사용하세요. 아래 전체 아키텍처에는 아직 구현되지 않은 서비스 기능도 포함되어 있습니다.
+
+
 CLIP 기반 **멀티모달 검색**과 Two-Tower → DeepFM → Re-ranking(MAB) **Multi-Stage 추천**,
 세션 기반 실시간 추천, A/B 테스트, Continuous Training까지 포함한 End-to-End 이커머스 시스템.
 
