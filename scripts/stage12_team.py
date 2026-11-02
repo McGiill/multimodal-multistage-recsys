@@ -41,7 +41,7 @@ def verify(root):
 def demo(out):
     os.environ["REC_MODEL_DIR"] = str(out.resolve())
     os.environ["PRELOAD_MODELS"] = "0"
-    from datetime import UTC, datetime
+    from datetime import datetime, timezone
 
     from fastapi.testclient import TestClient
 
@@ -49,7 +49,7 @@ def demo(out):
     from src.serving.model_loader import get_recommendation_models
 
     models = get_recommendation_models()
-    at = datetime.fromtimestamp(models.store.metadata["selection_cutoff"] + 86400, UTC).isoformat()
+    at = datetime.fromtimestamp(models.store.metadata["selection_cutoff"] + 86400, timezone.utc).isoformat()
     user = models.store.users.iloc[0].user_id
     with TestClient(app) as client:
         response = client.get("/api/recommend", params={"user_id": user, "top_n": 10, "at": at})
