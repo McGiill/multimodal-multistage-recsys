@@ -1,7 +1,7 @@
 """Stage1 후보 → Stage2 CVR. Stage3는 미연결이며 is_exploration=False."""
 
 import time
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 import numpy as np
 
@@ -21,7 +21,7 @@ class MultiStageStrategy(RecommendStrategy):
     def recommend(self, user_id, top_n, at=None):
         begin = time.perf_counter()
         models = get_recommendation_models()
-        now = stamp(at or datetime.now(UTC))
+        now = stamp(at or datetime.now(timezone.utc))
         if now < models.store.metadata["selection_cutoff"]:
             raise ValueError("Prediction time precedes model validation cutoff")
         ids, _, state = models.retriever.retrieve(

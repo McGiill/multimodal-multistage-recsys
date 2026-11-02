@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -59,11 +60,15 @@ class Searcher:
             raise ValueError(f"인덱스 모델({meta['model_name']})과 설정 모델이 다릅니다")
 
         ids = pd.read_parquet(d / "product_ids.parquet")["product_id"]
-        catalog = load_catalog(self.cfg, columns=["product_id", "name", "price"]).set_index("product_id")
+        columns = ["product_id", "name", "price", "category_l1", "category_l3", "color"]
+        catalog = load_catalog(self.cfg, columns=columns).set_index("product_id")
         catalog = catalog.loc[ids].reset_index()
         self.product_ids = catalog["product_id"].to_numpy()
         self.names = catalog["name"].to_numpy()
         self.prices = catalog["price"].to_numpy()
+        self.category_l1 = catalog["category_l1"].to_numpy()
+        self.category_l3 = catalog["category_l3"].to_numpy()
+        self.colors = catalog["color"].to_numpy()
 
         self.image_emb = np.load(d / "image_emb.npy")
         self.text_emb = np.load(d / "text_emb.npy")
@@ -117,13 +122,40 @@ class Searcher:
             rows=rows,
         )
 
+    # ------------------------------------------------------------------ 조건 안에서 검색 (스타일 사진 검색용)
+    def select_rows(self, l3: Iterable[str] | None = None, l1: Iterable[str] | None = None,
+                    colors: Iterable[str] | None = None) -> np.ndarray:
+        """소분류 / 고객층 / 색 조건을 모두 만족하는 상품의 행 번호. None인 조건은 걸지 않는다."""
+        mask = np.ones(len(self.product_ids), dtype=bool)
+        for values, column in ((l3, self.category_l3), (l1, self.category_l1), (colors, self.colors)):
+            if values is not None:
+                mask &= np.isin(column, list(values))
+        return np.flatnonzero(mask)
+
+    def rank_rows(self, q_image: np.ndarray, rows: np.ndarray, top_k: int) -> SearchResult:
+        """주어진 상품들 안에서 이미지 유사도순. 조건으로 좁힌 후보는 수천 개라 인덱스 없이 전부 계산한다."""
+        scores = self.image_emb[rows] @ q_image
+        order = np.argsort(-scores)[:top_k]
+        result = SearchResult(
+            search_type=SearchType.IMAGE,
+            product_ids=self.product_ids[rows[order]].tolist(),
+            scores=[round(float(s), 4) for s in scores[order]],
+            total_count=len(rows),
+            rows=rows[order],
+        )
+        result.items = self._items(result)
+        return result
+
     # ------------------------------------------------------------------ API 진입점
     def search(self, query_text: str | None, image: Image.Image | None, top_k: int = 10) -> SearchResult:
         q_text = self.encoder.encode_texts([query_text])[0] if query_text else None
         q_image = self.encoder.encode_images([image])[0] if image is not None else None
         result = self.search_vectors(q_text, q_image, top_k)
-        result.items = [
+        result.items = self._items(result)
+        return result
+
+    def _items(self, result: SearchResult) -> list[dict[str, Any]]:
+        return [
             {"product_id": pid, "name": str(self.names[r]), "score": score, "price": float(self.prices[r])}
             for pid, score, r in zip(result.product_ids, result.scores, result.rows)
         ]
-        return result
