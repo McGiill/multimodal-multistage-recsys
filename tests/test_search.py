@@ -125,6 +125,47 @@ def test_search_within_conditions(searcher) -> None:
     assert result.items[0]["name"] == "Ankle boots" and result.scores == sorted(result.scores, reverse=True)
 
 
+def test_bm25_index_matches_rank_bm25() -> None:
+    from rank_bm25 import BM25Okapi
+
+    from src.search.bm25 import BM25Index, tokenize
+    from src.search.catalog import product_texts
+
+    docs = [tokenize(t) for t in product_texts(_catalog())]
+    fast, ref = BM25Index(docs), BM25Okapi(docs)
+    for query in ("black strap top", "jersey jersey", "unknown words", "Ankle BOOTS leather"):
+        assert np.allclose(fast.scores(query), ref.get_scores(tokenize(query)))
+
+
+def test_text_search_fuses_bm25(searcher) -> None:
+    # CLIP 벡터는 3번(Wool sweater)을 가리키지만 단어는 4번(Ankle boots)과 일치
+    searcher.encoder.text_vecs["ankle boots"] = searcher._image_emb_for_test[3]
+    assert searcher.search("ankle boots", None, top_k=1).product_ids == ["hm_0000000003"]  # BM25 비중 0
+    searcher.cfg["text_query"]["bm25_weight"] = 0.8
+    result = searcher.search("ankle boots", None, top_k=2)
+    assert result.product_ids[0] == "hm_0000000004"
+    assert searcher.search_vectors(searcher._image_emb_for_test[3], None, 1).product_ids == ["hm_0000000003"]  # 문장 없으면 CLIP만
+
+
+def test_image_search_attribute_bonus(searcher, tmp_path) -> None:
+    from src.search import attributes
+
+    cfg = searcher.cfg | {"seed": 42, "attributes": {"epochs": 200, "lr": 0.05, "weight_decay": 0.0}}
+    attributes.fit(cfg)
+    probe = attributes.AttributeProbe(tmp_path / "fake__clip" / "attributes.npz",
+                                      {"color": searcher.colors, "category": searcher.category_l3})
+    q = searcher._image_emb_for_test[0]  # 0번 상품 사진 (Black, Vest top)
+    bonus = probe.bonus(q, np.arange(6), {"color": 1.0, "category": 0.0})
+    assert bonus.argmax() in (0, 4) and bonus[0] > bonus[1]  # 검은색 상품(0, 4)에 가점, 흰색(1)보다 크게
+
+    searcher.attributes = probe
+    plain = searcher.search(None, q, top_k=6)
+    assert plain.scores[0] == pytest.approx(1.0, abs=1e-4)  # 가점 비중 0 → 코사인 그대로
+    searcher.cfg["image_query"] = {"color_weight": 1.0, "category_weight": 1.0}
+    boosted = searcher.search(None, q, top_k=6)
+    assert boosted.product_ids[0] == "hm_0000000000" and boosted.scores[0] > 1.0
+
+
 def test_bm25_baseline() -> None:
     ids, scores = BM25Searcher(_catalog()).search("black strap top", top_k=2)
     assert ids[0] in {"hm_0000000000", "hm_0000000001"}

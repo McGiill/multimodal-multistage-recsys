@@ -1,7 +1,9 @@
 seed: 42
 
 clip:
-  model_name: openai/clip-vit-base-patch32   # 모델을 바꾸면 인덱스는 모델별 폴더에 따로 저장됨
+  model_name: patrickjohncyh/fashion-clip   # 모델을 바꾸면 인덱스는 모델별 폴더에 따로 저장됨
+                          # 패션 데이터로 다시 학습한 CLIP (transformers). 기본 CLIP(openai/clip-vit-base-patch32)보다
+                          # test 전 유형에서 높음 (이미지 MRR 0.529 → 0.644, 2026-10-12)
   batch_size: 32
   index_device: auto      # 인덱스 구축용: auto | cpu | cuda | mps
   serve_device: cpu       # API 서빙용 (과제 응답시간 기준은 CPU)
@@ -21,12 +23,24 @@ index:
 retrieval:
   candidate_k: 200        # 인덱스마다 가져오는 후보 수 (정밀 재채점 전)
 
+# 가중치는 전부 valid 쿼리로 탐색해서 정한다 (python -m src.evaluation.tune_search). test는 보고용으로만.
 text_query:
-  image_weight: 0.2       # 텍스트 검색 점수 = w * (텍스트→상품 이미지) + (1-w) * (텍스트→상품 텍스트)
-                          # valid 쿼리로 0~1 탐색해 결정 (0.2가 최고, 2026-10-11)
+  image_weight: 0.4       # CLIP 점수 = w * (텍스트→상품 이미지) + (1-w) * (텍스트→상품 텍스트)
+  bm25_weight: 0.4        # 텍스트 점수 = (1-l) * CLIP + l * BM25 (0이면 CLIP만)
+                          # valid 탐색 (2026-11-03): CLIP만(w 0.1) MRR 0.784 / NDCG 0.600 → 융합 0.931 / 0.749
+
+image_query:              # 이미지 점수 = 이미지 유사도(0~1) + 사진의 색·소분류 추정 확률 가점 (0이면 유사도만)
+  color_weight: 0.5       # 분류기: src/search/attributes.py (상품 이미지 임베딩 → 색 / 소분류)
+  category_weight: 0.5    # valid 탐색 (2026-11-03): 가점 없이 MRR 0.657 / NDCG 0.326 → 0.727 / 0.385
+                          # (가점을 더 세게 주면 NDCG는 조금 오르지만 HitRate가 떨어져서 제외: tune_search.choose)
 
 hybrid:
-  text_weight: 0.5        # 하이브리드 점수 = w * 텍스트 경로 + (1-w) * 이미지 경로 (valid 탐색 결과 0.5)
+  text_weight: 0.7        # 하이브리드 점수 = w * 텍스트 경로 + (1-w) * 이미지 경로 (valid 0.906 / 0.505)
+
+attributes:               # 색 / 소분류 분류기 학습 (indexer가 마지막에 실행)
+  epochs: 300
+  lr: 0.01
+  weight_decay: 0.0001
 
 default_top_k: 10
 

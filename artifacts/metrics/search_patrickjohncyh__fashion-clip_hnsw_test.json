@@ -11,38 +11,71 @@
     "ef_search": 128
   },
   "weights": {
-    "text_query.image_weight": 0.1,
-    "hybrid.text_weight": 0.7
+    "text_query": {
+      "image_weight": 0.4,
+      "bm25_weight": 0.4
+    },
+    "image_query": {
+      "color_weight": 0.5,
+      "category_weight": 0.5
+    },
+    "hybrid": {
+      "text_weight": 0.7
+    }
   },
   "k": 10,
   "split": "test",
   "mrr_min_grade": 1,
   "seed": 42,
-  "evaluated_at": "2026-10-12T21:01:20",
+  "evaluated_at": "2026-11-03T11:12:05",
   "results": {
-    "clip_text": {
+    "text": {
       "n_queries": 493,
-      "mrr": 0.7998,
-      "ndcg@10": 0.6116,
-      "hit_rate@10": 0.9168
+      "mrr": 0.926,
+      "ndcg@10": 0.743,
+      "hit_rate@10": 0.9939
     },
-    "clip_image": {
+    "image": {
+      "n_queries": 507,
+      "mrr": 0.6815,
+      "ndcg@10": 0.3612,
+      "hit_rate@10": 0.8797
+    },
+    "hybrid": {
+      "n_queries": 246,
+      "mrr": 0.9364,
+      "ndcg@10": 0.4986,
+      "hit_rate@10": 0.9919
+    },
+    "all": {
+      "n_queries": 1246,
+      "mrr": 0.8286,
+      "ndcg@10": 0.5394,
+      "hit_rate@10": 0.947
+    },
+    "clip_only_text": {
+      "n_queries": 493,
+      "mrr": 0.7795,
+      "ndcg@10": 0.5768,
+      "hit_rate@10": 0.9108
+    },
+    "clip_only_image": {
       "n_queries": 507,
       "mrr": 0.6439,
       "ndcg@10": 0.32,
       "hit_rate@10": 0.8935
     },
-    "clip_hybrid": {
+    "clip_only_hybrid": {
       "n_queries": 246,
-      "mrr": 0.865,
-      "ndcg@10": 0.4411,
-      "hit_rate@10": 0.9675
+      "mrr": 0.8677,
+      "ndcg@10": 0.4332,
+      "hit_rate@10": 0.9634
     },
-    "clip_all": {
+    "clip_only_all": {
       "n_queries": 1246,
-      "mrr": 0.7492,
-      "ndcg@10": 0.4593,
-      "hit_rate@10": 0.9173
+      "mrr": 0.7417,
+      "ndcg@10": 0.4439,
+      "hit_rate@10": 0.9141
     },
     "bm25_text": {
       "n_queries": 493,
