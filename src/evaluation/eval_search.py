@@ -1,16 +1,21 @@
-"""검색 평가: CLIP(text / image / hybrid) vs BM25 베이스라인 — MRR, NDCG@10, HitRate@10.
+"""검색 평가: 검색기(text / image / hybrid) vs BM25 베이스라인 — MRR, NDCG@10, HitRate@10.
 
     python -m src.evaluation.build_search_eval   # 평가셋이 없으면 먼저 생성
     python -m src.evaluation.eval_search
-    python -m src.evaluation.eval_search --model patrickjohncyh/fashion-clip --text-image-weight 0.3
+    python -m src.evaluation.eval_search --model openai/clip-vit-base-patch32 --text-image-weight 0.3
         (모델 실험: 가중치는 python -m src.evaluation.tune_search 로 valid에서 먼저 정한다)
 
+결과 항목
+- text / image / hybrid / all : 설정 그대로의 검색기 (CLIP + BM25 융합 + 색·소분류 가점)
+- clip_only_*                 : BM25 융합·색·소분류 가점을 끈 CLIP만 (개선 효과 비교용)
+- bm25_text                   : 베이스라인
 결과: artifacts/metrics/search_<모델>_<인덱스>.json + 콘솔 표 (docs/report_search.md 에 옮겨 적기)
 """
 
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 from datetime import datetime
 from typing import Any
@@ -35,7 +40,7 @@ def score(ranked: list[list[str]], eval_df: pd.DataFrame, k: int, mrr_min_grade:
     }
 
 
-def run_clip(searcher: Searcher, df: pd.DataFrame, k: int, batch_size: int) -> list[list[str]]:
+def encode(searcher: Searcher, df: pd.DataFrame, batch_size: int) -> tuple[np.ndarray | None, np.ndarray | None]:
     image_root = ROOT / searcher.cfg["paths"]["image_root"]
     enc = searcher.encoder
     q_text = enc.encode_texts(df["query_text"].tolist(), batch_size) if df["query_text"].notna().all() else None
@@ -43,12 +48,28 @@ def run_clip(searcher: Searcher, df: pd.DataFrame, k: int, batch_size: int) -> l
     if df["query_image_path"].notna().all():
         paths = [image_root / p for p in df["query_image_path"]]
         q_image = np.concatenate(list(enc.encode_image_files(paths, batch_size)))
+    return q_text, q_image
+
+
+def run_search(
+    searcher: Searcher, df: pd.DataFrame, q_text: np.ndarray | None, q_image: np.ndarray | None, k: int
+) -> list[list[str]]:
+    texts = df["query_text"].tolist()
     return [
         searcher.search_vectors(
-            q_text[i] if q_text is not None else None, q_image[i] if q_image is not None else None, k
+            q_text[i] if q_text is not None else None, q_image[i] if q_image is not None else None, k,
+            texts[i] if q_text is not None else None,
         ).product_ids
         for i in range(len(df))
     ]
+
+
+def clip_only(cfg: dict[str, Any]) -> dict[str, Any]:
+    """BM25 융합과 색·소분류 가점을 끈 설정 (CLIP 점수만)."""
+    cfg = copy.deepcopy(cfg)
+    cfg["text_query"]["bm25_weight"] = 0.0
+    cfg["image_query"] = {"color_weight": 0.0, "category_weight": 0.0}
+    return cfg
 
 
 def main() -> None:
@@ -68,18 +89,19 @@ def main() -> None:
         eval_set = eval_set[eval_set["split"] == args.split]
     searcher = Searcher(cfg, device=args.device or cfg["clip"]["index_device"])
 
-    results: dict[str, Any] = {}
-    ranked_by_type: dict[str, list[list[str]]] = {}
-    frames: dict[str, pd.DataFrame] = {}
-    for qtype in ("text", "image", "hybrid"):
-        df = eval_set[eval_set["query_type"] == qtype].reset_index(drop=True)
-        if len(df):
-            frames[qtype] = df
-            ranked_by_type[qtype] = run_clip(searcher, df, k, cfg["clip"]["batch_size"])
-            results[f"clip_{qtype}"] = score(ranked_by_type[qtype], df, k, ev["mrr_min_grade"])
+    frames = {t: eval_set[eval_set["query_type"] == t].reset_index(drop=True) for t in ("text", "image", "hybrid")}
+    frames = {t: df for t, df in frames.items() if len(df)}
+    queries = {t: encode(searcher, df, cfg["clip"]["batch_size"]) for t, df in frames.items()}
 
-    ranked_all = [r for t in frames for r in ranked_by_type[t]]
-    results["clip_all"] = score(ranked_all, pd.concat(frames.values()), k, ev["mrr_min_grade"])
+    results: dict[str, Any] = {}
+    for prefix, run_cfg in (("", cfg), ("clip_only_", clip_only(cfg))):
+        searcher.cfg = run_cfg
+        ranked = {t: run_search(searcher, df, *queries[t], k) for t, df in frames.items()}
+        for t, df in frames.items():
+            results[f"{prefix}{t}"] = score(ranked[t], df, k, ev["mrr_min_grade"])
+        ranked_all = [r for t in frames for r in ranked[t]]
+        results[f"{prefix}all"] = score(ranked_all, pd.concat(frames.values()), k, ev["mrr_min_grade"])
+    searcher.cfg = cfg
 
     if "text" in frames:
         bm25 = BM25Searcher(load_catalog(cfg))
@@ -89,7 +111,7 @@ def main() -> None:
     report = {
         "model_name": cfg["clip"]["model_name"],
         "index": cfg["index"],
-        "weights": {"text_query.image_weight": cfg["text_query"]["image_weight"], "hybrid.text_weight": cfg["hybrid"]["text_weight"]},
+        "weights": {"text_query": cfg["text_query"], "image_query": cfg.get("image_query", {}), "hybrid": cfg["hybrid"]},
         "k": k,
         "split": args.split,
         "mrr_min_grade": ev["mrr_min_grade"],

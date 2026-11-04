@@ -8,6 +8,7 @@
     image_emb.npy / text_emb.npy   상품 이미지·텍스트 임베딩 (L2 정규화, 카탈로그 순서)
     image.index   / text.index     FAISS 인덱스
     product_ids.parquet            임베딩 행 순서 = 상품 ID
+    attributes.npz                 이미지 임베딩 → 색 / 소분류 분류기 (src/search/attributes.py)
     meta.json                      모델, 인덱스 설정, 생성 시각
 """
 
@@ -27,6 +28,7 @@ from tqdm import tqdm
 from src.common.config import load_config
 from src.common.faiss_utils import build_index, save_index
 from src.common.seed import set_seed
+from src.search import attributes
 from src.search.catalog import (
     image_paths,
     index_dir,
@@ -99,7 +101,8 @@ def main() -> None:
         "created_at": datetime.now().isoformat(timespec="seconds"),
     }
     (out_dir / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"[indexer] 완료: 임베딩 {t_embed:.1f}s, 인덱스 {t_index:.1f}s ({cfg['index']['type']})")
+    attributes.fit(cfg)
+    print(f"[indexer] 완료: 임베딩 {t_embed:.1f}s, 인덱스 {t_index:.1f}s ({cfg['index']['type']}) + 색·소분류 분류기")
 
 
 if __name__ == "__main__":
