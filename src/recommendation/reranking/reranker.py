@@ -180,6 +180,23 @@ class Reranker:
             record(arm, pid in clicked_ids)
         return len(result.exploration_arms)
 
+    def record_shown(self, result: RerankResult) -> int:
+        """진열 즉시 MAB 탐색 칸의 노출만 기록한다 (클릭은 record_click). 기록한 칸 수를 돌려준다."""
+        record = getattr(self.explorer, "record_shown", None)
+        if record is None:
+            return 0
+        for arm in result.exploration_arms.values():
+            record(arm)
+        return len(result.exploration_arms)
+
+    def record_click(self, arm: str) -> bool:
+        """record_shown으로 노출을 센 탐색 칸이 클릭됨."""
+        record = getattr(self.explorer, "record_click", None)
+        if record is None:
+            return False
+        record(arm)
+        return True
+
     # ---- 풀 구성 ---------------------------------------------------------
 
     def _build_slot_pools(

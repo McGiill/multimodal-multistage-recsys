@@ -1,0 +1,40 @@
+{
+  "k": 50,
+  "n_queries": 76242,
+  "with_session": 32682,
+  "target": "next viewed product (test split, examples.npz)",
+  "targets": {
+    "hit_rate": 0.2,
+    "ndcg": 0.08,
+    "coverage": 0.2
+  },
+  "model_version": "stage12-cvr-team-v20261022",
+  "measured_at": "2026-11-05T08:46:56",
+  "multistage": {
+    "hit_rate": 0.05937672149209097,
+    "ndcg": 0.016083393832870697,
+    "coverage": 0.04478,
+    "latency_p95_ms": 20.357495005009696,
+    "passed": {
+      "hit_rate": false,
+      "ndcg": false,
+      "coverage": false
+    },
+    "lift_vs_popularity": {
+      "hit_rate": -0.03331197950032028,
+      "ndcg": -0.09464574840798257,
+      "coverage": 43.78
+    }
+  },
+  "popularity": {
+    "hit_rate": 0.06142283780593374,
+    "ndcg": 0.01776475208968081,
+    "coverage": 0.001,
+    "latency_p95_ms": 1.0873000137507915,
+    "passed": {
+      "hit_rate": false,
+      "ndcg": false,
+      "coverage": false
+    }
+  }
+}

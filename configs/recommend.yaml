@@ -48,6 +48,11 @@ reranking:
   max_same_category_run: 2          # 동일 카테고리 연속 3개 이상 금지
   cold_start_min_events: 5          # 이력 5개 미만 → 인기+트렌딩 대체
   popular_trending_ratio: [1, 1]    # cold-start 인기:트렌딩 교차 비율
+  popularity:                       # cold-start 목록 (요청 시각 이전 기록만, reranking/popularity.py)
+    window_days: 7                  # 인기 = 최근 7일 구매 수 / 트렌딩 비교 기간
+    trending_recent_days: 1         # 트렌딩 = 최근 1일 하루 평균 조회 ÷ 그 전 7일 하루 평균 조회
+    trending_min_views: 3           # 최근 조회가 이보다 적으면 트렌딩 제외
+    list_size: 100                  # 목록 길이 (top_n이 더 크면 top_n)
   new_item_days: 7
   new_item_min_slots: 1             # 신규 상품 슬롯 개수 (위치는 Top-N 균등 분할로 자동 계산)
   mab:
@@ -60,5 +65,9 @@ reranking:
     exploration_slots: 2            # 탐색 슬롯 개수 (명세: 1~2개, 위치는 자동 계산)
 
 default_top_n: 10
+final_eval_k: 50                    # 최종 평가 HitRate / NDCG @k (명세 k=50, src/evaluation/eval_pipeline.py)
+tradeoff:                           # 탐색 칸 개수 trade-off 실험 (src/evaluation/tradeoff_exploration.py)
+  exploration_slots: [0, 1, 2, 3]   # 명세 범위는 1~2개, 0·3개는 비교용
+  sample: 10000                     # 평가 조회 수 (seed 고정 표본, null이면 test 76,242건 전부)
 paths:
   model_dir: artifacts/models

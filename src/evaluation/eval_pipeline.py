@@ -1,0 +1,152 @@
+"""최종 추천 평가: 전체 파이프라인(Stage 1 → 세션 결합 → Stage 2 → Stage 3)의 test HitRate@50 / NDCG@50 / Coverage.
+
+    python -m src.evaluation.eval_pipeline                                  # multistage + popularity (베이스라인)
+    python -m src.evaluation.eval_pipeline --strategies multistage,multistage_no_session,popularity
+    python -m src.evaluation.eval_pipeline --limit 2000                     # 빠른 확인용 (seed 고정 표본)
+
+정답: test 조회 1건마다 "그 시점에 다음으로 본 상품" 1개 (팀 Stage 1 Recall@300과 같은 76,242건,
+      학습 묶음의 examples.npz split == 2). 예측 시각 = 그 조회 시각, 사용자 이력은 모델 규칙(frozen_split)대로.
+세션: 같은 방문에서 그 조회보다 먼저 본 상품들 (test_events.parquet의 session_id). 세션이 없으면 Stage 1 후보 그대로.
+지표 (src/evaluation/metrics.py): HitRate@k, NDCG@k (정답 1개 → 1/log2(순위+1)), Coverage = 추천된 고유 상품 / 전체 상품.
+k = configs/recommend.yaml 의 final_eval_k (명세 50). 목표: HitRate@50 ≥ 0.20, NDCG@50 ≥ 0.08, Coverage ≥ 0.20.
+MAB 탐색 칸은 서빙과 같이 진열 즉시 노출만 센다 (평가 중 클릭 정보는 넣지 않음).
+
+결과: artifacts/metrics/recommend_final.json
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import time
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Any
+
+import numpy as np
+import pandas as pd
+
+from src.common.config import ROOT, artifact_dir, data_dir, load_config
+from src.evaluation.metrics import coverage, hit_rate_at_k, ndcg_at_k
+from src.recommendation.pipeline import MultiStageStrategy
+from src.recommendation.ranking.features import seconds
+from src.recommendation.strategies.baselines import PopularityStrategy
+from src.serving.model_loader import get_recommendation_models
+
+TARGETS = {"hit_rate": 0.20, "ndcg": 0.08, "coverage": 0.20}
+
+
+def session_prefixes(users: np.ndarray, times: np.ndarray) -> list[list[str]]:
+    """(사용자, 조회 시각)마다 같은 방문에서 그보다 먼저 본 상품 (오래된 것 → 최근 순)."""
+    ev = pd.read_parquet(data_dir() / "splits" / "test_events.parquet",
+                         columns=["user_id", "session_id", "timestamp", "event_type", "product_id"])
+    ev = ev[ev["event_type"] == "view"].copy()
+    ev["t"] = seconds(ev["timestamp"])  # examples.npz의 time과 같은 변환 (UTC unix 초)
+    ev = ev.sort_values(["session_id", "t"], kind="stable")
+    session_of = dict(zip(zip(ev["user_id"], ev["t"]), ev["session_id"]))
+    views = {s: (g["t"].to_numpy(), g["product_id"].tolist()) for s, g in ev.groupby("session_id", sort=False)}
+    out = []
+    for u, t in zip(users, times):
+        s = session_of.get((u, float(t)))
+        if s is None:
+            out.append([])
+            continue
+        ts, items = views[s]
+        out.append(items[: int(np.searchsorted(ts, t, side="left"))])
+    return out
+
+
+@dataclass
+class Queries:
+    """평가할 test 조회: 사용자, 예측 시각(unix 초), 정답 상품, 세션 클릭."""
+
+    users: np.ndarray
+    times: np.ndarray
+    targets: list[set[str]]
+    sessions: list[list[str]]
+    n_items: int
+    k: int
+
+
+def load_queries(limit: int | None = None) -> Queries:
+    """examples.npz의 test 조회 (limit이 있으면 seed 고정 표본)."""
+    cfg = load_config("recommend")
+    models = get_recommendation_models()
+    folder = ROOT / cfg["paths"]["model_dir"] / cfg["version"]
+    data = np.load(folder / "examples.npz", allow_pickle=False)
+    ix = np.flatnonzero(data["split"] == 2)
+    if limit:
+        ix = np.sort(np.random.default_rng(cfg["seed"]).choice(ix, min(limit, len(ix)), replace=False))
+    users, times = data["user"][ix], data["time"][ix]
+    return Queries(users=users, times=times,
+                   targets=[{models.store.item_ids[t - 1]} for t in data["target"][ix]],
+                   sessions=session_prefixes(users, times),
+                   n_items=len(models.store.item_ids), k=cfg["final_eval_k"])
+
+
+def evaluate_strategy(strategy: Any, q: Queries, use_session: bool, name: str = "") -> dict[str, Any]:
+    """조회마다 strategy.recommend(top_n=k) → HitRate@k / NDCG@k / Coverage / p95."""
+    ranked, latency, t0 = [], [], time.perf_counter()
+    for j, (u, t) in enumerate(zip(q.users, q.times)):
+        at = datetime.fromtimestamp(float(t), tz=timezone.utc)
+        kw = {"session_clicks": q.sessions[j]} if use_session else {}
+        s = time.perf_counter()
+        resp = strategy.recommend(str(u), q.k, at=at, **kw)
+        latency.append((time.perf_counter() - s) * 1000)
+        ranked.append([r.product_id for r in resp.recommendations])
+        if (j + 1) % 10000 == 0:
+            print(f"  [{name}] {j + 1:,}/{len(q.users):,} ({time.perf_counter() - t0:.0f}s)", flush=True)
+    m = {
+        "hit_rate": hit_rate_at_k(ranked, q.targets, q.k),
+        "ndcg": ndcg_at_k(ranked, q.targets, q.k),
+        "coverage": coverage(ranked, q.n_items),
+        "latency_p95_ms": float(np.percentile(latency, 95)),
+    }
+    m["passed"] = {key: m[key] >= v for key, v in TARGETS.items()}
+    print(f"[eval] {name:22s} HitRate@{q.k} {m['hit_rate']:.4f}  NDCG@{q.k} {m['ndcg']:.4f}  "
+          f"Coverage {m['coverage']:.4f}  p95 {m['latency_p95_ms']:.1f}ms", flush=True)
+    return m
+
+
+def run(strategies: list[str], limit: int | None = None) -> dict[str, Any]:
+    q = load_queries(limit)
+    result: dict[str, Any] = {
+        "k": q.k, "n_queries": len(q.users), "with_session": sum(bool(s) for s in q.sessions),
+        "target": "next viewed product (test split, examples.npz)", "targets": TARGETS,
+        "model_version": load_config("recommend")["version"],
+        "measured_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    for name in strategies:
+        if name == "popularity":
+            strategy, use_session = PopularityStrategy(), False
+        elif name in ("multistage", "multistage_no_session"):
+            strategy, use_session = MultiStageStrategy(), name == "multistage"
+        else:
+            raise ValueError(f"지원하지 않는 전략: {name}")
+        result[name] = evaluate_strategy(strategy, q, use_session, name)
+
+    if "popularity" in result:
+        base = result["popularity"]
+        for name in strategies:
+            if name != "popularity":
+                result[name]["lift_vs_popularity"] = {
+                    key: (result[name][key] / base[key] - 1) if base[key] else None
+                    for key in ("hit_rate", "ndcg", "coverage")
+                }
+    return result
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--strategies", default="multistage,popularity")
+    parser.add_argument("--limit", type=int, default=None, help="평가할 조회 수 (기본: 전부)")
+    args = parser.parse_args()
+    result = run(args.strategies.split(","), args.limit)
+    out = artifact_dir() / "metrics" / ("recommend_final.json" if not args.limit else "recommend_final_sample.json")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"[eval] 저장 → {out}")
+
+
+if __name__ == "__main__":
+    main()

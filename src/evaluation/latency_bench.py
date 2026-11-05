@@ -5,7 +5,9 @@
 
 - search: /api/search 를 앱 안에서 직접 호출(TestClient)해 text / image / hybrid 각각 측정
           → API 파싱·직렬화까지 포함한 서버 처리 시간. 기준 p95 < 200ms
-- 추천·후보·피처 조회 측정은 각 모듈 구현 후 추가
+- feature: Feature Store 조회 (세션 클릭 + 최근 조회 상품, 요청 1번에 필요한 만큼). 기준 p95 < 10ms
+           REDIS_HOST가 있으면 Redis, 없으면 메모리 (docker compose up -d redis 후 REDIS_HOST=localhost)
+- 추천·후보 측정은 각 모듈 구현 후 추가
 
 결과: artifacts/metrics/latency_<target>.json (실측 환경 포함 → docs 리포트에 기록)
 """
@@ -93,17 +95,39 @@ def bench_search(model: str | None = None) -> dict[str, Any]:
     }
 
 
+def bench_feature() -> dict[str, Any]:
+    from src.common.schemas import Event
+    from src.serving.feature_store import RedisFeatureStore, get_feature_store
+
+    store = get_feature_store()
+    user, session = "bench_user", "bench_session"
+    for i in range(load_config("serving")["redis"]["recent_views_len"]):
+        store.push_event(Event(event_id=f"bench{i}", user_id=user, session_id=session, event_type="view",
+                               product_id=f"hm_{i:010d}", timestamp=datetime.now()))
+
+    def lookup(_: int) -> None:
+        store.get_session_clicks(session)
+        store.get_recent_views(user)
+
+    result = {"store": type(store).__name__, "lookup": measure(lookup)}
+    if isinstance(store, RedisFeatureStore):
+        store.client.delete(f"recent_views:{user}", f"session_clicks:{session}")
+    return result
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--target", choices=["search"], default="search")
+    parser.add_argument("--target", choices=["search", "feature"], default="search")
     parser.add_argument("--model", default=None, help="검색 모델 (기본: configs/search.yaml)")
     args = parser.parse_args()
 
     result = {"target": args.target, "measured_at": datetime.now().isoformat(timespec="seconds"), **machine_info()}
     if args.target == "search":
         result |= bench_search(args.model)
+    elif args.target == "feature":
+        result |= bench_feature()
 
-    suffix = f"_{model_slug(result['model_name'])}" if args.model else ""
+    suffix = f"_{model_slug(result['model_name'])}" if args.model and args.target == "search" else ""
     out = ROOT / load_config("search")["paths"]["metrics_dir"] / f"latency_{args.target}{suffix}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -113,6 +137,9 @@ def main() -> None:
         if mode in result:
             r = result[mode]
             print(f"  {mode:6s} p50 {r['p50_ms']:7.1f}ms  p95 {r['p95_ms']:7.1f}ms  (기준 200ms)")
+    if "lookup" in result:
+        r = result["lookup"]
+        print(f"  {result['store']} p50 {r['p50_ms']:.2f}ms  p95 {r['p95_ms']:.2f}ms  (기준 10ms)")
     print(f"[latency] 저장 → {out.relative_to(ROOT)}")
 
 

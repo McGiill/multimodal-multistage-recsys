@@ -235,6 +235,95 @@ def test_api_stage3_rules(trained, monkeypatch):
         assert cold.status_code == 200 and len(cold.json()["recommendations"]) == 10
 
 
+def test_api_session_clicks_reflected(trained, monkeypatch):
+    """POST /api/events의 view → 같은 session_id 추천에서 세션 결합 + session_context."""
+    import src.recommendation.pipeline as pipeline
+    from src.recommendation.session.encoder import (
+        ItemIndex,
+        SessionConfig,
+        SessionEncoder,
+        SessionModel,
+    )
+    from src.serving.feature_store import get_feature_store
+
+    _, bundle, models = trained
+    monkeypatch.setenv("REC_MODEL_DIR", str(bundle))
+    monkeypatch.setenv("PRELOAD_MODELS", "0")
+    get_feature_store.cache_clear()
+    torch.manual_seed(42)
+    ids = models.store.item_ids
+    session = SessionModel(SessionEncoder(len(ids) + 1, 8, 8), ItemIndex(ids), SessionConfig())
+    calls = []
+    merge = session.merge_candidates
+    monkeypatch.setattr(session, "merge_candidates", lambda *a, **k: calls.append(a[0]) or merge(*a, **k))
+    monkeypatch.setattr(pipeline, "get_session_model", lambda: session)
+    from src.serving.main import app
+
+    category = models.store.products.set_index("product_id")["category_l2"]
+    clicks = [ids[0], ids[1], ids[0]]
+    at = "2026-01-30T12:00:00Z"
+    with TestClient(app) as client:
+        for i, (kind, pid) in enumerate([("view", clicks[0]), ("search", None),
+                                         ("view", clicks[1]), ("view", clicks[2])]):
+            event = {"event_id": f"E{i}", "user_id": "U00001", "session_id": "S1",
+                     "event_type": kind, "product_id": pid, "timestamp": at}
+            assert client.post("/api/events", json=event).status_code == 200
+        args = {"user_id": "U00001", "top_n": 10, "at": at}
+        body = client.get("/api/recommend", params={**args, "session_id": "S1"}).json()
+        assert calls == [clicks]
+        assert body["session_context"]["recent_clicks"] == clicks
+        assert body["session_context"]["session_interest"] == category[ids[0]]
+        recs = body["recommendations"]
+        assert len(recs) == 10 and len({r["product_id"] for r in recs}) == 10
+
+        # 클릭이 없는 세션은 세션 결합 없이 기존 결과
+        plain = client.get("/api/recommend", params=args).json()
+        other = client.get("/api/recommend", params={**args, "session_id": "S2"}).json()
+        assert calls == [clicks]
+        assert other["session_context"] == plain["session_context"]
+    get_feature_store.cache_clear()
+
+
+def test_api_cold_start_click_feedback_and_baselines(trained, monkeypatch):
+    """cold-start 인기·트렌딩, 탐색 칸 클릭 → MAB 통계, strategy 교체(popularity / recency)."""
+    from src.recommendation.reranking.stage2 import get_rerank_service
+    from src.serving.model_loader import get_recommendation_models
+
+    _, bundle, models = trained
+    monkeypatch.setenv("REC_MODEL_DIR", str(bundle))
+    monkeypatch.setenv("PRELOAD_MODELS", "0")
+    from src.serving.main import app
+
+    category = models.store.products.set_index("product_id")["category_l2"]
+    at = "2026-01-30T12:00:00Z"
+    with TestClient(app) as client:
+        cold = client.get("/api/recommend", params={"user_id": "not_registered", "top_n": 10, "at": at}).json()
+        assert "popular" in {r["reason"] for r in cold["recommendations"]}
+
+        recs = client.get("/api/recommend", params={"user_id": "U00001", "top_n": 10, "at": at}).json()
+        pid = next(r["product_id"] for r in recs["recommendations"] if r["reason"] == "mab_exploration")
+        store = get_rerank_service(get_recommendation_models()).reranker.explorer.store
+        arm = category[pid]
+        before = store.get([arm])[arm]
+        event = {"event_id": "E1", "user_id": "U00001", "session_id": "S9", "event_type": "view",
+                 "product_id": pid, "timestamp": at}
+        assert client.post("/api/events", json=event).status_code == 200
+        after = store.get([arm])[arm]
+        assert after.clicks == before.clicks + 1 and after.shown == before.shown
+
+        created = models.store.products.set_index("product_id")["created_at"]
+        for name, reason in [("popularity", "popular"), ("recency", "recency")]:
+            monkeypatch.setitem(load_config("recommend"), "strategy", name)
+            body = client.get("/api/recommend", params={"user_id": "U00001", "top_n": 10, "at": at}).json()
+            items = body["recommendations"]
+            assert len(items) == 10 and {r["reason"] for r in items} == {reason}
+            assert not any(r["is_exploration"] for r in items)
+            if name == "recency":
+                days = [created[r["product_id"]] for r in items]
+                assert days == sorted(days, reverse=True)
+                assert max(days) <= pd.Timestamp(at).tz_localize(None)
+
+
 def test_holdout_history_frozen_and_test_events_not_saved(trained):
     source, _, models = trained
     store = models.store

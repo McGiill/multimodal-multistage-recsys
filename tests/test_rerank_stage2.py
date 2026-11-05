@@ -24,6 +24,7 @@ from src.recommendation.reranking import (
 )
 from src.recommendation.reranking import stage2
 from src.recommendation.reranking.mab import EpsilonGreedyExplorer
+from src.recommendation.reranking.popularity import PopularityConfig, PopularityLists
 
 NOW = datetime(2026, 3, 31, 12, tzinfo=timezone.utc)
 NOW_TS = NOW.timestamp()
@@ -187,9 +188,107 @@ def test_get_rerank_service_is_cached(monkeypatch: pytest.MonkeyPatch) -> None:
     get_rerank_service.cache_clear()
     monkeypatch.setattr(stage2, "load_product_codes", lambda: None)
     products = make_products()
-    models = FakeModels(SimpleNamespace(item_ids=products["product_id"].tolist(), products=products))
+    events = pd.DataFrame({"event_type": pd.Series(dtype=str), "_time": pd.Series(dtype=float),
+                           "_pid": pd.Series(dtype=int)})
+    models = FakeModels(SimpleNamespace(item_ids=products["product_id"].tolist(), products=products,
+                                        events=events, metadata={}))
     try:
         a, b = get_rerank_service(models), get_rerank_service(models)
         assert a is b  # 요청마다 새로 만들면 MAB 통계가 사라진다
     finally:
         get_rerank_service.cache_clear()
+
+
+# ---------------------------------------------------------------------------
+# cold-start 인기·트렌딩 목록
+# ---------------------------------------------------------------------------
+
+DAY = 86400.0
+
+
+def make_popularity(n_items: int = 40) -> PopularityLists:
+    """기준 시각 NOW_TS 기준: 상품 1은 구매 3번(7일 안), 상품 2는 구매 1번, 상품 3은 8일 전 구매(기간 밖).
+    조회: 상품 4는 최근 1일에 5번(급상승), 상품 5는 매일 1번씩 꾸준히, 상품 6은 최근 1일 2번(최소 3번 미달)."""
+    views = [(NOW_TS - 0.5 * DAY, 4)] * 5 + [(NOW_TS - d * DAY - 1, 5) for d in range(8)] + [(NOW_TS - 0.2 * DAY, 6)] * 2
+    buys = [(NOW_TS - 1 * DAY, 1)] * 3 + [(NOW_TS - 2 * DAY, 2), (NOW_TS - 8 * DAY, 3)]
+    views.sort(), buys.sort()
+    cfg = PopularityConfig(window_days=7, trending_recent_days=1, trending_min_views=3, list_size=10)
+    return PopularityLists(np.array([t for t, _ in views]), np.array([i for _, i in views]),
+                           np.array([t for t, _ in buys]), np.array([i for _, i in buys]), n_items, cfg)
+
+
+def test_popular_by_recent_purchases() -> None:
+    ids, scores = make_popularity().popular(NOW_TS)
+    assert ids[:2].tolist() == [1, 2]       # 구매 수 순
+    assert 3 not in ids[:2]                 # 8일 전 구매는 기간 밖
+    assert scores[0] == 1.0 and 0 < scores[1] < 1
+    assert set(ids[2:]) <= {4, 5, 6}        # 구매 없는 상품은 조회 수 순으로 뒤에
+
+
+def test_trending_by_view_growth_and_min_views() -> None:
+    ids, scores = make_popularity().trending(NOW_TS)
+    assert ids.tolist() == [4]              # 5는 꾸준해서 증가 없음(최근 1번 < 3), 6은 최근 조회 2번
+    assert scores.tolist() == [1.0]
+
+
+def test_lists_use_only_past_events() -> None:
+    pop = make_popularity()
+    ids, _ = pop.popular(NOW_TS - 1.5 * DAY)   # 상품 1의 구매(1일 전)는 아직 없음
+    assert ids[0] == 2
+
+
+def test_popularity_config_from_yaml() -> None:
+    cfg = PopularityConfig.from_recommend_config()
+    assert cfg.window_days >= 1 and cfg.list_size >= 50  # 평가 k=50을 채울 수 있어야 함
+
+
+def test_cold_start_uses_popular_and_trending() -> None:
+    svc = make_service(popularity=make_popularity())
+    ids = np.arange(1, 38)
+    res = svc.rerank(ids, np.linspace(1, 0, len(ids)), warm_state(0), NOW_TS, top_n=10)
+    assert res.is_cold_start
+    reasons = {i.reason for i in res.items}
+    assert {"popular", "trending"} <= reasons
+    assert res.items[0].product_id == "hm_0000000000"  # 번호 1 = 구매 최다
+
+
+def test_cold_start_list_time_follows_frozen_history() -> None:
+    # test 시각(valid 끝 이후) 요청이면 valid 끝 시각 기준 목록
+    svc = make_service(popularity=make_popularity(), history_cutoffs=(NOW_TS - 3 * DAY, NOW_TS - 1.5 * DAY))
+    assert svc.history_time(NOW_TS) == NOW_TS - 1.5 * DAY
+    assert svc.history_time(NOW_TS - 2 * DAY) == NOW_TS - 3 * DAY   # valid 기간 → train 끝
+    pop, _ = svc.cold_start_lists(NOW_TS, 10)
+    assert pop[0].product_id == "hm_0000000001"  # 상품 1 구매(1일 전)는 기준 시각 이후라 빠짐
+
+
+# ---------------------------------------------------------------------------
+# MAB 피드백: 진열 즉시 노출, 클릭 이벤트로 클릭
+# ---------------------------------------------------------------------------
+
+def test_shown_then_click_updates_arm_stats() -> None:
+    store = InMemoryStatsStore()
+    svc = make_service(explorer=EpsilonGreedyExplorer(store=store))
+    ids = np.arange(1, 38)
+    res = svc.rerank(ids, np.linspace(1, 0, len(ids)).astype(np.float32), warm_state(), NOW_TS, top_n=10)
+    assert svc.record_shown("U1", res) == len(res.exploration_arms) > 0
+    pid, arm = next(iter(res.exploration_arms.items()))
+    shown = store.get([arm])[arm].shown
+    assert shown >= 1 and store.get([arm])[arm].clicks == 0
+
+    assert not svc.record_click("U2", pid)          # 다른 사용자
+    assert not svc.record_click("U1", "hm_9999999999")  # 탐색 칸이 아닌 상품
+    assert svc.record_click("U1", pid)
+    assert not svc.record_click("U1", pid)          # 같은 상품 두 번째 클릭은 안 셈
+    assert store.get([arm])[arm].clicks == 1 and store.get([arm])[arm].shown == shown
+
+
+def test_new_recommendation_replaces_pending_clicks() -> None:
+    svc = make_service(explorer=EpsilonGreedyExplorer(store=InMemoryStatsStore()))
+    ids = np.arange(1, 38)
+    scores = np.linspace(1, 0, len(ids)).astype(np.float32)
+    first = svc.rerank(ids, scores, warm_state(), NOW_TS, top_n=10)
+    svc.record_shown("U1", first)
+    cold = svc.rerank(ids, scores, warm_state(0), NOW_TS, top_n=10)  # 목록 없음 → Stage 2 순서, 탐색 칸 있음
+    svc.record_shown("U1", cold)
+    stale = set(first.exploration_arms) - set(cold.exploration_arms)
+    assert all(not svc.record_click("U1", p) for p in stale)
