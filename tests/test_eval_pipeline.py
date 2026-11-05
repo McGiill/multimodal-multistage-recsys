@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from src.evaluation import eval_pipeline
 
@@ -25,6 +26,28 @@ def test_session_prefixes_only_earlier_views_in_same_session(tmp_path, monkeypat
     users = np.array(["U1", "U1", "U1", "U2"])
     times = np.array([base, base + 3, base + 4, base])
     assert eval_pipeline.session_prefixes(users, times) == [[], ["A", "B"], [], []]
+
+
+def test_run_compares_multistage_with_both_baselines(monkeypatch):
+    from types import SimpleNamespace
+
+    q = SimpleNamespace(k=50, users=np.array(["U1"]), sessions=[[]])
+    values = {"multistage": 0.3, "two_tower_only": 0.2, "popularity": 0.1}
+    calls = []
+
+    def fake_eval(strategy, q, use_session, name=""):
+        calls.append((name, type(strategy).__name__, use_session))
+        return dict.fromkeys(("hit_rate", "ndcg", "coverage"), values[name])
+
+    monkeypatch.setattr(eval_pipeline, "load_queries", lambda limit: q)
+    monkeypatch.setattr(eval_pipeline, "evaluate_strategy", fake_eval)
+
+    result = eval_pipeline.run(["multistage", "two_tower_only", "popularity"])
+    assert calls == [("multistage", "MultiStageStrategy", True), ("two_tower_only", "TwoTowerOnlyStrategy", False),
+                     ("popularity", "PopularityStrategy", False)]
+    assert result["multistage"]["lift_vs_two_tower_only"]["hit_rate"] == pytest.approx(0.5)
+    assert result["multistage"]["lift_vs_popularity"]["hit_rate"] == pytest.approx(2.0)
+    assert "lift_vs_popularity" not in result["two_tower_only"]  # 베이스라인끼리는 비교 안 함
 
 
 def test_tradeoff_changes_only_exploration_slots_and_restores(monkeypatch):

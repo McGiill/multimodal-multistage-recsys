@@ -1,6 +1,6 @@
 """최종 추천 평가: 전체 파이프라인(Stage 1 → 세션 결합 → Stage 2 → Stage 3)의 test HitRate@50 / NDCG@50 / Coverage.
 
-    python -m src.evaluation.eval_pipeline                                  # multistage + popularity (베이스라인)
+    python -m src.evaluation.eval_pipeline                                  # multistage + 베이스라인 (two_tower_only, popularity)
     python -m src.evaluation.eval_pipeline --strategies multistage,multistage_no_session,popularity
     python -m src.evaluation.eval_pipeline --limit 2000                     # 빠른 확인용 (seed 고정 표본)
 
@@ -30,10 +30,14 @@ from src.common.config import ROOT, artifact_dir, data_dir, load_config
 from src.evaluation.metrics import coverage, hit_rate_at_k, ndcg_at_k
 from src.recommendation.pipeline import MultiStageStrategy
 from src.recommendation.ranking.features import seconds
-from src.recommendation.strategies.baselines import PopularityStrategy
+from src.recommendation.strategies.baselines import (
+    PopularityStrategy,
+    TwoTowerOnlyStrategy,
+)
 from src.serving.model_loader import get_recommendation_models
 
 TARGETS = {"hit_rate": 0.20, "ndcg": 0.08, "coverage": 0.20}
+BASELINES = ("two_tower_only", "popularity")  # 명세 베이스라인 → 결과에 lift_vs_<이름>
 
 
 def session_prefixes(users: np.ndarray, times: np.ndarray) -> list[list[str]]:
@@ -119,26 +123,29 @@ def run(strategies: list[str], limit: int | None = None) -> dict[str, Any]:
     for name in strategies:
         if name == "popularity":
             strategy, use_session = PopularityStrategy(), False
+        elif name == "two_tower_only":
+            strategy, use_session = TwoTowerOnlyStrategy(), False
         elif name in ("multistage", "multistage_no_session"):
             strategy, use_session = MultiStageStrategy(), name == "multistage"
         else:
             raise ValueError(f"지원하지 않는 전략: {name}")
         result[name] = evaluate_strategy(strategy, q, use_session, name)
 
-    if "popularity" in result:
-        base = result["popularity"]
-        for name in strategies:
-            if name != "popularity":
-                result[name]["lift_vs_popularity"] = {
-                    key: (result[name][key] / base[key] - 1) if base[key] else None
-                    for key in ("hit_rate", "ndcg", "coverage")
-                }
+    for baseline in BASELINES:
+        if baseline in result:
+            base = result[baseline]
+            for name in strategies:
+                if name not in BASELINES:
+                    result[name][f"lift_vs_{baseline}"] = {
+                        key: (result[name][key] / base[key] - 1) if base[key] else None
+                        for key in ("hit_rate", "ndcg", "coverage")
+                    }
     return result
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--strategies", default="multistage,popularity")
+    parser.add_argument("--strategies", default="multistage,two_tower_only,popularity")
     parser.add_argument("--limit", type=int, default=None, help="평가할 조회 수 (기본: 전부)")
     args = parser.parse_args()
     result = run(args.strategies.split(","), args.limit)
