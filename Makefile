@@ -24,10 +24,11 @@ eval-search:    ## 검색 평가 (CLIP vs BM25)
 eval-style-search: ## 스타일 사진 검색 평가 (상품 사진 쿼리에서 기존 이미지 검색과 비교)
 	python -m src.evaluation.eval_style_search
 
-train:          ## Two-Tower → FAISS → DeepFM CVR 학습
+train:          ## Two-Tower → FAISS → DeepFM CVR → 세션 인코더 학습
 	python -m src.recommendation.candidate.train
 	python -m src.recommendation.candidate.build_index
 	python -m src.recommendation.ranking.train
+	python -m src.recommendation.session.train
 
 eval:           ## 오프라인 지표 산출
 	python -m src.evaluation.eval_search

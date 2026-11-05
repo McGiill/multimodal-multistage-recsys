@@ -324,6 +324,29 @@ def test_api_cold_start_click_feedback_and_baselines(trained, monkeypatch):
                 assert max(days) <= pd.Timestamp(at).tz_localize(None)
 
 
+def test_api_two_tower_only_baseline(trained, monkeypatch):
+    """Ranking·Re-ranking 없이 Stage 1 후보를 유사도순 그대로."""
+    _, bundle, models = trained
+    monkeypatch.setenv("REC_MODEL_DIR", str(bundle))
+    monkeypatch.setenv("PRELOAD_MODELS", "0")
+    monkeypatch.setitem(load_config("recommend"), "strategy", "two_tower_only")
+    from src.serving.main import app
+
+    args = {"user_id": "U00001", "top_n": 10, "at": "2026-01-28T12:00:00Z"}
+    with TestClient(app) as client:
+        response = client.get("/api/recommend", params=args)
+        assert response.status_code == 200, response.text
+        body = response.json()
+        items = body["recommendations"]
+        ids, scores, _ = models.retriever.retrieve("U00001", 10, stamp(args["at"]))
+        assert [r["product_id"] for r in items] == [models.store.item_ids[i - 1] for i in ids]
+        assert [r["score"] for r in items] == pytest.approx(scores.tolist())
+        assert {r["reason"] for r in items} == {"two_tower"}
+        assert not any(r["is_exploration"] for r in items)
+        assert body["pipeline_latency"]["ranking_ms"] == 0
+        assert client.get("/api/recommend", params={**args, "at": "2026-01-01T00:00:00Z"}).status_code == 400
+
+
 def test_holdout_history_frozen_and_test_events_not_saved(trained):
     source, _, models = trained
     store = models.store
