@@ -1,0 +1,40 @@
+{
+  "config": {
+    "encoder": "gru",
+    "embedding_dim": 64,
+    "hidden_dim": 64,
+    "max_len": 10,
+    "min_len": 2,
+    "long_short_alpha": 0.6,
+    "temperature": 0.1,
+    "epochs": 5,
+    "lr": 0.001,
+    "batch_size": 512,
+    "eval_k": 20,
+    "n_candidates": 50,
+    "interest_field": "category_l2",
+    "model_file": "session_encoder.pt",
+    "seed": 42
+  },
+  "train_examples": 344637,
+  "trained_items": 21964,
+  "loss": [
+    9.887763757303091,
+    8.705934067256054,
+    8.595403047911965,
+    8.572008158027403,
+    8.558922368965291
+  ],
+  "valid": {
+    "session_gru": {
+      "hit_rate@20": 0.05393660531697342,
+      "mrr@20": 0.013760063525520382,
+      "n_examples": 46944
+    },
+    "popularity": {
+      "hit_rate@20": 0.05223244717109748,
+      "mrr@20": 0.013383323551443213,
+      "n_examples": 46944
+    }
+  }
+}

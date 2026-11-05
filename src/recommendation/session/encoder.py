@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import asdict, dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -191,6 +192,17 @@ class SessionModel:
         trained[blob["trained"]] = True
         return cls(encoder, index, cfg, trained)
 
+    def allowed_mask(self, product_ids: Sequence[str], available: np.ndarray) -> np.ndarray:
+        """top_k / merge_candidates의 allowed 인자: product_ids 중 available이 True인 상품만 True.
+
+        Stage 1 번호 순서(product_ids, available)를 이 모델의 번호 순서로 옮긴다. 모르는 상품은 무시한다.
+        """
+        mask = np.zeros(len(self.index), dtype=bool)
+        pos = self.index.positions(product_ids)
+        keep = (pos > 0) & np.asarray(available, dtype=bool)
+        mask[pos[keep]] = True
+        return mask
+
     # ---- 추론 -------------------------------------------------------------
 
     def encode(self, clicks: Sequence[str]) -> np.ndarray | None:
@@ -259,6 +271,16 @@ class SessionModel:
         combined = blend_scores(long_all, self.score(clicks, ids), self.config.long_short_alpha)
         order = np.argsort(-combined, kind="stable")
         return [ids[i] for i in order], combined[order]
+
+
+@lru_cache(maxsize=1)
+def get_session_model() -> SessionModel | None:
+    """서빙용 세션 인코더 (서버에서 한 번 로딩). 학습 파일이 없으면 None → Stage 1 후보를 그대로 쓴다."""
+    path = model_path()
+    if not path.exists():
+        print(f"[session] 세션 인코더 없음 ({path}) → python -m src.recommendation.session.train", flush=True)
+        return None
+    return SessionModel.load(path)
 
 
 def blend_scores(long: np.ndarray, short: np.ndarray, alpha: float) -> np.ndarray:

@@ -1,0 +1,62 @@
+{
+  "k": 50,
+  "n_queries": 10000,
+  "sample": 10000,
+  "algorithm": "epsilon_greedy",
+  "model_version": "stage12-cvr-team-v20261022",
+  "measured_at": "2026-11-05T09:34:03",
+  "rows": [
+    {
+      "exploration_slots": 0,
+      "in_spec_range": false,
+      "hit_rate": 0.0591,
+      "ndcg": 0.01615826879856919,
+      "coverage": 0.03704,
+      "latency_p95_ms": 22.258244984550398,
+      "passed": {
+        "hit_rate": false,
+        "ndcg": false,
+        "coverage": false
+      }
+    },
+    {
+      "exploration_slots": 1,
+      "in_spec_range": true,
+      "hit_rate": 0.0591,
+      "ndcg": 0.016156754761757288,
+      "coverage": 0.03794,
+      "latency_p95_ms": 22.582965012406927,
+      "passed": {
+        "hit_rate": false,
+        "ndcg": false,
+        "coverage": false
+      }
+    },
+    {
+      "exploration_slots": 2,
+      "in_spec_range": true,
+      "hit_rate": 0.0591,
+      "ndcg": 0.01612375080278025,
+      "coverage": 0.0381,
+      "latency_p95_ms": 23.003215008066036,
+      "passed": {
+        "hit_rate": false,
+        "ndcg": false,
+        "coverage": false
+      }
+    },
+    {
+      "exploration_slots": 3,
+      "in_spec_range": false,
+      "hit_rate": 0.0589,
+      "ndcg": 0.01608939963818673,
+      "coverage": 0.03826,
+      "latency_p95_ms": 22.87283495243173,
+      "passed": {
+        "hit_rate": false,
+        "ndcg": false,
+        "coverage": false
+      }
+    }
+  ]
+}

@@ -6,8 +6,11 @@ MAB 구조
   arm    = category_l2 (상품 단위는 클릭이 너무 드물어 학습이 안 됨)
   보상   = 탐색 슬롯에 노출된 뒤 클릭 여부
   통계   = arm별 (노출 수, 클릭 수), 전체 사용자 공용. StatsStore로 분리 → 지금은 메모리, 나중에 Redis
-  노출 수는 pick 시점이 아니라 실제 진열 후 record_feedback()으로 센다
+  노출 수는 pick 시점이 아니라 실제 진열 후 센다
   (pick은 다양성 규칙 대비 여유분까지 돌려주므로 pick 시점에 세면 과대 집계됨)
+  기록 방법 두 가지
+    record_feedback(arm, clicked) : 노출과 클릭 여부를 한 번에 (오프라인 실험·시뮬레이션)
+    record_shown(arm) → 나중에 record_click(arm) : 진열 즉시 노출, 클릭 이벤트가 오면 클릭 (추천 API)
 담당: D
 """
 
@@ -92,6 +95,10 @@ class StatsStore(Protocol):
 
     def record(self, arm: str, clicked: bool) -> None: ...
 
+    def record_shown(self, arm: str) -> None: ...
+
+    def record_click(self, arm: str) -> None: ...
+
 
 class InMemoryStatsStore:
     """프로세스 메모리 저장소 (개발·테스트·오프라인 실험용)."""
@@ -103,9 +110,15 @@ class InMemoryStatsStore:
         return {a: replace(self._stats.get(a, ArmStats())) for a in arms}
 
     def record(self, arm: str, clicked: bool) -> None:
-        s = self._stats.setdefault(arm, ArmStats())
-        s.shown += 1
-        s.clicks += int(clicked)
+        self.record_shown(arm)
+        if clicked:
+            self.record_click(arm)
+
+    def record_shown(self, arm: str) -> None:
+        self._stats.setdefault(arm, ArmStats()).shown += 1
+
+    def record_click(self, arm: str) -> None:
+        self._stats.setdefault(arm, ArmStats()).clicks += 1
 
 
 # ---------------------------------------------------------------------------
@@ -132,6 +145,14 @@ class BanditExplorer:
     def record_feedback(self, arm: str, clicked: bool) -> None:
         """탐색 슬롯에 실제로 진열된 상품의 arm과 클릭 여부를 기록한다."""
         self.store.record(arm, clicked)
+
+    def record_shown(self, arm: str) -> None:
+        """탐색 슬롯에 진열됨 (클릭은 나중에 record_click으로)."""
+        self.store.record_shown(arm)
+
+    def record_click(self, arm: str) -> None:
+        """record_shown으로 기록한 진열 상품이 클릭됨."""
+        self.store.record_click(arm)
 
     def pick(self, candidates: Sequence[Candidate], n: int) -> list[Candidate]:
         by_arm: dict[str, list[Candidate]] = {}

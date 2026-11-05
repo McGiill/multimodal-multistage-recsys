@@ -251,6 +251,14 @@ def test_save_and_load_roundtrip(trained, tmp_path):
     assert np.allclose(loaded.encode(["P001", "P002"]), model.encode(["P001", "P002"]))
 
 
+def test_allowed_mask_maps_stage1_order():
+    model = SessionModel(SessionEncoder(len(PIDS) + 1, 8, 8), ItemIndex(PIDS), SessionConfig())
+    stage1 = ["P101", "unknown", "P000"]  # Stage 1 번호 순서, 모르는 상품 섞임
+    mask = model.allowed_mask(stage1, np.array([True, True, False]))
+    assert mask.shape == (len(model.index),)
+    assert np.flatnonzero(mask).tolist() == model.index.encode(["P101"])
+
+
 def test_blend_scores():
     assert blend_scores(np.array([1.0, 0.0]), np.array([0.0, 1.0]), 0.6).tolist() == pytest.approx([0.6, 0.4])
 
@@ -292,3 +300,4 @@ def test_build_session_context_fields():
     assert ctx.recent_clicks == [f"P0{i:02d}" for i in range(5, 15)]
     assert ctx.session_interest == "cat0"
     assert set(ctx.model_dump()) == {"recent_clicks", "session_interest"}
+
