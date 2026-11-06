@@ -10,12 +10,18 @@
    - 사용자가 영역(box)을 지정하면 그 영역의 옷만 검색한다 (match면 그 옷과 어울리는 옷)
 3. 고객층: 스타일 사진이면 사진 속 사람이 여성 / 남성 / 아이인지 판단해 category_l1을 제한
 4. 옷별 검색: 잘라낸 사진 ↔ 상품 사진 유사도. 그 부위의 소분류 (+ 색, 디테일 조건) 안에서만 찾는다
+   사전에 없는 영어 단어("floral")가 있으면 그 안에서 텍스트 점수를 함께 쓴다
 5. 옷(부위)별로 묶어서 돌려준다
+
+상품 사진은 요청에 따라 경로가 나뉜다 (valid 쿼리 비교, 2026-11-05)
+- 사진만 / 설명 문장("white dress"): 일반 검색 (/api/search와 같은 코드). 이미지 MRR 0.657 → 0.727, 하이브리드 0.694 → 0.907
+- 색 변경(사진 색과 다른 색 요청), 종류·디테일·어울림 요청: 조건 + 유사도. 같은 디자인의 다른 색 Hit@10 0.728 (하이브리드 0.140)
 
 그룹마다 결과의 근거(basis)를 같이 준다.
 - photo_item : 사진 속 그 옷과 비슷한 상품
 - photo_style: 찾는 종류가 사진에 없을 때 (예: 상반신 사진 + "어울리는 바지") 사진 전체 분위기와 비슷한 상품
 - whole_photo: 사진 전체가 검색 기준 (상품 사진, 또는 옷을 하나도 못 찾았을 때)
+- whole_photo_text: 상품 사진 + 설명 문장 (일반 하이브리드 검색)
 
 디테일 조절("소매 더 짧게")은 디테일 점수 = 상품 사진 · (more 문장 - less 문장)으로,
 기준 옷(잘라낸 사진)보다 점수가 충분히 높은/낮은 상품만 남긴 뒤 유사도순으로 고른다.
@@ -41,10 +47,11 @@ from src.search.detector import (
     kind_of_label,
     select_detections,
 )
-from src.search.query_parser import Intent, ParsedQuery, parse_query
+from src.search.query_parser import Intent, ParsedQuery, description_text, parse_query
 from src.search.searcher import Searcher, SearchResult
 
 PHOTO_ITEM, PHOTO_STYLE, WHOLE_PHOTO = "photo_item", "photo_style", "whole_photo"
+WHOLE_PHOTO_TEXT = "whole_photo_text"
 
 
 class Detector(Protocol):
@@ -115,24 +122,60 @@ class StyleSearcher:
         style_vec = item_vecs[user] if user is not None else photo_vec  # match: 지정한 영역의 옷과 어울리는
         audience_name, l1 = self._audience(photo_vec, audience, is_person)
 
+        description = description_text(query_text, parsed)
+        if not is_person and box is None and l1 is None and self._use_general_search(parsed, description, photo_vec):
+            group = self._general_group(photo_vec, description, top_k)
+            return StyleSearchResult(parsed.intent, is_person, audience_name, [group], detections)
+
+        free_text = parsed.free_text or None
+        q_free = encoder.encode_texts([free_text])[0] if free_text else None
+        text_filter = [f"text:{free_text}"] if free_text else []
         groups = []
         for plan in self._plans(parsed, detections, is_person, user):
             det = detections[plan.detection] if plan.detection is not None else None
             q = item_vecs[plan.detection] if det is not None else style_vec
             rows = self.searcher.select_rows(l3=plan.l3, l1=l1, colors=parsed.colors or None)
             rows, applied = self._apply_details(q, rows, parsed.details, plan.slot, top_k)
-            result = self.searcher.rank_rows(q, rows, top_k)
-            for item, r in zip(result.items, result.rows):
-                item["category"] = str(self.searcher.category_l3[r])
-                item["color"] = str(self.searcher.colors[r])
+            result = self.searcher.rank_rows(q, rows, top_k, q_free, free_text)
+            self._add_item_details(result)
             groups.append(StyleGroup(
                 slot=plan.slot, kind=det.kind if det else None, basis=plan.basis, result=result,
                 box=det.box if det else None, detection_score=det.score if det else None,
-                filters=[f"color:{c}" for c in parsed.color_names] + applied,
+                filters=[f"color:{c}" for c in parsed.color_names] + applied + text_filter,
                 box_source=det.source if det else None,
             ))
         groups.sort(key=lambda g: self.slot_order.index(g.slot) if g.slot in self.slot_order else len(self.slot_order))
         return StyleSearchResult(parsed.intent, is_person, audience_name, groups, detections)
+
+    # ------------------------------------------------------------------ 상품 사진: 일반 검색 경로
+    def _use_general_search(self, parsed: ParsedQuery, description: str | None, photo_vec: np.ndarray) -> bool:
+        """일반 검색을 쓸지. 어울림·디테일·색 변경과, 한국어로 말한 종류·색은 조건 + 유사도로 찾는다."""
+        if parsed.intent == Intent.MATCH or parsed.details:
+            return False
+        if parsed.colors and self._is_color_change(parsed.colors, photo_vec):
+            return False
+        return description is not None or not (parsed.kinds or parsed.colors)
+
+    def _is_color_change(self, colors: list[str], photo_vec: np.ndarray) -> bool:
+        """사진이 요청한 색일 확률이 낮으면 설명이 아니라 색 변경 요청. 색 분류기가 없으면 요청대로 색 조건을 건다."""
+        probe = self.searcher.attributes
+        if probe is None:
+            return True
+        return probe.class_prob("color", photo_vec, colors) < self.cfg["color_change"]["min_photo_prob"]
+
+    def _general_group(self, photo_vec: np.ndarray, description: str | None, top_k: int) -> StyleGroup:
+        q_text = self.searcher.encoder.encode_texts([description])[0] if description else None
+        result = self.searcher.search_encoded(q_text, photo_vec, top_k, description)
+        self._add_item_details(result)
+        return StyleGroup(
+            slot="all", kind=None, basis=WHOLE_PHOTO_TEXT if description else WHOLE_PHOTO, result=result,
+            filters=[f"text:{description}"] if description else [],
+        )
+
+    def _add_item_details(self, result: SearchResult) -> None:
+        for item, r in zip(result.items, result.rows):
+            item["category"] = str(self.searcher.category_l3[r])
+            item["color"] = str(self.searcher.colors[r])
 
     # ------------------------------------------------------------------ 무엇을 검색할지
     def _l3(self, kinds: list[str]) -> list[str]:

@@ -9,6 +9,7 @@
 - 긴 단어부터 찾고, 이미 잡힌 글자는 다시 쓰지 않는다 ("반바지"가 "바지"로, "긴팔"이 "긴"으로 잡히지 않게).
 - 영어 단어는 단어 경계로 찾는다.
 - 디테일 단어("소매")와 방향 단어("짧게")는 위치가 가까운 것끼리 짝짓는다. 방향만 있으면 default_detail.
+- 사전에 없는 영어 단어는 free_text로 모은다 ("floral dress" → floral). 한국어는 FashionCLIP이 약해서 모으지 않는다.
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from enum import Enum
 from typing import Any
 
 _HANGUL = re.compile(r"[가-힣]")
+_ENGLISH_WORD = re.compile(r"[a-z][a-z0-9]*(?:[-/'][a-z0-9]+)*")
 
 
 class Intent(str, Enum):
@@ -35,6 +37,7 @@ class ParsedQuery:
     colors: list[str] = field(default_factory=list)      # 카탈로그 color 값 (예: Red, Dark Red)
     color_names: list[str] = field(default_factory=list)  # 색 이름 (예: red) — 응답 설명용
     details: dict[str, int] = field(default_factory=dict)  # 디테일 → 방향 (+1 = more 문장 쪽, -1 = less 쪽)
+    free_text: str = ""                                  # 사전에 없는 영어 단어 (CLIP·BM25 점수에 사용)
 
 
 def _pattern(word: str) -> re.Pattern[str]:
@@ -78,6 +81,10 @@ def parse_query(text: str | None, cfg: dict[str, Any]) -> ParsedQuery:
             used[m.start():m.end()] = [True] * (m.end() - m.start())
             hits.append((m.start(), kind, value))
     hits.sort(key=lambda h: h[0])
+
+    rest = "".join(" " if u else c for c, u in zip(text, used))
+    stopwords = set(cfg["free_text_stopwords"])
+    parsed.free_text = " ".join(w for w in _ENGLISH_WORD.findall(rest) if w not in stopwords)
 
     intents = set()
     match_pos, target_before = None, False
@@ -127,3 +134,12 @@ def parse_query(text: str | None, cfg: dict[str, Any]) -> ParsedQuery:
     elif parsed.kinds:
         parsed.intent = Intent.FIND
     return parsed
+
+
+def description_text(text: str | None, parsed: ParsedQuery) -> str | None:
+    """하이브리드 점수에 넣을 설명 문장. 영어 문장은 통째로, 한국어가 섞이면 사전 밖 영어 단어만. 없으면 None."""
+    if not text or not text.strip():
+        return None
+    if _HANGUL.search(text):
+        return parsed.free_text or None
+    return text.strip() if parsed.free_text or parsed.kinds or parsed.colors else None

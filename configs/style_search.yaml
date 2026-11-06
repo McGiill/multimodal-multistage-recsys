@@ -226,3 +226,9 @@ detail_shortcuts:         # 단어 하나에 디테일과 방향이 같이 들�
   tight: [fit, down]
 default_detail: length    # 방향만 있고 디테일 단어가 없으면 ("더 짧은 거") 기장으로 본다
 detail_margin: 0.25       # 기준 옷보다 (후보 점수 표준편차 × 이 값) 이상 차이 나는 상품만 남김 (부족하면 0으로 완화)
+
+color_change:             # 상품 사진 + 색 요청: 사진이 그 색일 확률이 낮으면 색 변경(색 조건 + 유사도), 높으면 설명(일반 하이브리드)
+  min_photo_prob: 0.05    # valid 하이브리드 쿼리 251개: 같은 색 요청 97.6%를 설명으로, 무작위 다른 색 요청 93.6%를 색 변경으로 분류 (2026-11-05)
+
+free_text_stopwords: [a, an, the, this, that, these, those, it, one, ones, with, in, of, for, to, and, or, like, me, my, show, find, give, want, please, similar, same, more, less, item, clothes, outfit, color, colour]
+                          # 사전에 없는 영어 단어 중 검색에 쓰지 않을 단어. 나머지는 CLIP·BM25 점수에 쓴다 (parse_query의 free_text)

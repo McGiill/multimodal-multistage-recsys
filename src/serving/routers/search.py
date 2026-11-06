@@ -6,8 +6,10 @@ POST /api/search/style — 스타일 사진(사람이 옷을 입은 사진) + �
 - multipart : query_text=..., image=<파일>, top_k=10
 /api/search: 텍스트만 있으면 text, 이미지만 있으면 image, 둘 다 있으면 hybrid.
 /api/search/style: 사진 필수. 텍스트 예 "이 옷이랑 어울리는 바지", "소매 더 짧게".
+                   상품 사진 + 사진만 / 설명 문장은 /api/search와 같은 검색, 색 변경·종류·디테일 요청은 조건 + 유사도.
                    audience(선택): auto(기본) / all / women / men / kids
                    box(선택): 검색할 영역 [x1, y1, x2, y2] (사진 픽셀, multipart는 "x1,y1,x2,y2")
+GET /api/products/{product_id} — 상품 이름·소분류·색·가격 (추천 결과처럼 ID만 있는 상품을 보여줄 때)
 GET /api/products/{product_id}/image — 상품 사진 (데모 화면 등에서 결과를 보여줄 때)
 """
 
@@ -21,6 +23,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Annotated
 
+import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
@@ -28,6 +31,7 @@ from PIL import Image, UnidentifiedImageError
 
 from src.common.config import ROOT, load_config
 from src.common.schemas import (
+    ProductInfo,
     SearchResponse,
     SearchResultItem,
     StyleDetection,
@@ -64,6 +68,13 @@ def get_product_images() -> dict[str, Path]:
     catalog = load_catalog(cfg, columns=["product_id", "image_path"])
     root = ROOT / cfg["paths"]["image_root"]
     return {pid: root / path for pid, path in zip(catalog["product_id"], catalog["image_path"])}
+
+
+@lru_cache(maxsize=1)
+def get_product_catalog() -> pd.DataFrame:
+    """상품 ID → 화면 표시용 정보. 처음 요청할 때 한 번만 읽는다."""
+    columns = ["product_id", "name", "category_l3", "color", "price"]
+    return load_catalog(load_config("search"), columns=columns).set_index("product_id")
 
 
 async def _parse(request: Request, default_k: int) -> tuple[str | None, bytes | None, int, dict]:
@@ -169,6 +180,15 @@ async def style_search(
         ],
         latency_ms=round((time.perf_counter() - t0) * 1000, 2),
     )
+
+
+@router.get("/products/{product_id}", response_model=ProductInfo)
+def product_info(product_id: str, catalog: Annotated[pd.DataFrame, Depends(get_product_catalog)]) -> ProductInfo:
+    if product_id not in catalog.index:
+        raise HTTPException(404, "상품이 없습니다")
+    row = catalog.loc[product_id]
+    return ProductInfo(product_id=product_id, name=row["name"], category=row["category_l3"], color=row["color"],
+                       price=row["price"])
 
 
 @router.get("/products/{product_id}/image")

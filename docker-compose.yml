@@ -1,9 +1,12 @@
+# 서비스 실행: docker compose up --build
+# 학습·평가·테스트: docker compose run --rm tools make train (tools는 up에 포함되지 않음)
+# 데이터(data/)와 모델·인덱스(artifacts/)는 용량이 커서 이미지에 넣지 않고 폴더를 연결한다.
 services:
   redis:
     image: redis:7-alpine
     container_name: redis
     command: ["redis-server", "--maxmemory", "1gb", "--maxmemory-policy", "allkeys-lru"]
-    ports: ["6379:6379"]
+    ports: ["${REDIS_HOST_PORT:-6379}:6379"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -12,31 +15,62 @@ services:
   api:
     build: { context: ., dockerfile: docker/api.Dockerfile }
     container_name: api-server
-    env_file: [.env]
-    ports: ["8000:8000"]
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      HF_HOME: /app/artifacts/models   # CLIP·검출 모델 가중치를 artifacts/models에 받고 재사용
+      OMP_NUM_THREADS: "4"
+    ports: ["${API_HOST_PORT:-8000}:8000"]
     volumes:
       - ./artifacts:/app/artifacts
-      - ./data:/app/data
-      - hf_cache:/root/.cache/huggingface   # CLIP 가중치는 처음 한 번만 받고 재사용
+      - ./data:/app/data:ro
     depends_on:
       redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 180s               # 시작할 때 CLIP 모델과 인덱스를 불러온다
+    cpus: 4                            # 명세 최소 사양 (CPU 4코어) 기준으로 응답시간을 맞춘다
     mem_limit: 4g
 
   dashboard:
     build: { context: ., dockerfile: docker/dashboard.Dockerfile }
     container_name: dashboard
-    env_file: [.env]
-    ports: ["8501:8501"]
+    environment:
+      API_BASE_URL: http://api:8000
+    ports: ["${DASHBOARD_HOST_PORT:-8501}:8501"]
     volumes:
       - ./artifacts:/app/artifacts:ro
       - ./docs:/app/docs:ro
-    depends_on: [api]
+    depends_on:
+      api: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   simulator:
     build: { context: ., dockerfile: docker/simulator.Dockerfile }
     container_name: simulator
-    env_file: [.env]
-    depends_on: [api]
+    environment:
+      API_BASE_URL: http://api:8000
+    depends_on:
+      api: { condition: service_healthy }
 
-volumes:
-  hf_cache:
+  tools:
+    build: { context: ., dockerfile: docker/tools.Dockerfile }
+    profiles: [tools]
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      HF_HOME: /app/artifacts/models
+    volumes:
+      - ./artifacts:/app/artifacts
+      - ./data:/app/data
+      - ./tests:/app/tests:ro
+    depends_on:
+      redis: { condition: service_healthy }

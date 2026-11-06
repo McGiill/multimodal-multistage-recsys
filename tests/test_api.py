@@ -2,6 +2,7 @@ import base64
 from io import BytesIO
 
 import numpy as np
+import pandas as pd
 from fastapi.testclient import TestClient
 from PIL import Image
 
@@ -12,6 +13,7 @@ from src.search.searcher import SearchResult
 from src.search.style_search import StyleGroup, StyleSearchResult
 from src.serving.main import app
 from src.serving.routers.search import (
+    get_product_catalog,
     get_product_images,
     get_searcher,
     get_style_searcher,
@@ -120,6 +122,18 @@ def test_style_search_requires_image_and_valid_audience() -> None:
     assert client.post("/api/search/style", json={"query_text": "바지"}).status_code == 422
     r = client.post("/api/search/style", json={"image_base64": _png_b64(), "audience": "teens"})
     assert r.status_code == 422
+
+
+def test_product_info() -> None:
+    catalog = pd.DataFrame({"name": ["Strap top"], "category_l3": ["Vest top"], "color": ["Black"], "price": [9.99]},
+                           index=pd.Index(["hm_0000000001"], name="product_id"))
+    app.dependency_overrides[get_product_catalog] = lambda: catalog
+    try:
+        assert client.get("/api/products/hm_0000000001").json() == {
+            "product_id": "hm_0000000001", "name": "Strap top", "category": "Vest top", "color": "Black", "price": 9.99}
+        assert client.get("/api/products/hm_9999999999").status_code == 404  # 카탈로그에 없는 상품
+    finally:
+        del app.dependency_overrides[get_product_catalog]
 
 
 def test_product_image(tmp_path) -> None:

@@ -3,7 +3,7 @@
 import pytest
 
 from src.common.config import load_config
-from src.search.query_parser import Intent, parse_query
+from src.search.query_parser import Intent, description_text, parse_query
 
 CFG = load_config("style_search")
 
@@ -51,3 +51,24 @@ def test_colors_map_to_catalog_values() -> None:
 )
 def test_details(text, details) -> None:
     assert parse_query(text, CFG).details == details
+
+
+@pytest.mark.parametrize(
+    "text, free_text, description",
+    [
+        (None, "", None),
+        ("floral summer dress", "floral summer", "floral summer dress"),  # 영어 문장은 통째로 하이브리드에
+        ("white dress", "", "white dress"),                               # 전부 사전 단어
+        ("show me something similar", "something", "show me something similar"),
+        ("show me the same one", "", None),                               # 뜻 없는 단어뿐
+        ("소매 더 짧게", "", None),
+        ("예쁜 옷 찾아줘", "", None),                                     # 한국어는 CLIP에 넣지 않음
+        ("floral 원피스", "floral", "floral"),                            # 섞이면 사전 밖 영어 단어만
+        ("10만원 이하 니트", "", None),
+        ("pants that go with this hoodie", "", "pants that go with this hoodie"),
+    ],
+)
+def test_free_text_and_description(text, free_text, description) -> None:
+    p = parse_query(text, CFG)
+    assert p.free_text == free_text
+    assert description_text(text, p) == description

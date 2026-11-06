@@ -13,6 +13,7 @@ from PIL import Image
 
 from src.common.config import load_config
 from src.common.faiss_utils import build_index, l2_normalize, save_index
+from src.common.schemas import SearchType
 from src.search.detector import (
     DETECTOR,
     GROUNDING,
@@ -24,7 +25,13 @@ from src.search.detector import (
 )
 from src.search.query_parser import Intent
 from src.search.searcher import Searcher
-from src.search.style_search import PHOTO_ITEM, PHOTO_STYLE, WHOLE_PHOTO, StyleSearcher
+from src.search.style_search import (
+    PHOTO_ITEM,
+    PHOTO_STYLE,
+    WHOLE_PHOTO,
+    WHOLE_PHOTO_TEXT,
+    StyleSearcher,
+)
 
 CFG = load_config("style_search")
 DIM = 8
@@ -179,10 +186,79 @@ def test_product_photo_skips_detection(searcher) -> None:
     out = s.search(_photo())
     assert not out.is_person_photo and out.detections == []
     [g] = out.groups
-    assert g.basis == WHOLE_PHOTO and g.result.total_count == len(PRODUCTS)  # 지금 이미지 검색과 같음
+    assert g.basis == WHOLE_PHOTO and g.result.total_count == 4  # 일반 이미지 검색과 같음 (FAISS 후보 candidate_k개)
+    assert g.result.search_type == SearchType.IMAGE and g.result.items[0]["category"]
 
     [g] = s.search(_photo(), "이 바지 검은색으로").groups  # 텍스트로 종류를 정하면 그 종류에서
     assert g.slot == "bottom" and g.basis == WHOLE_PHOTO and _ids(g) == ["hm_0000000003"]
+
+
+class FakeProbe:
+    """사진이 요청한 색일 확률을 정해 둔 색 분류기."""
+
+    def __init__(self, prob):
+        self.prob = prob
+
+    def class_prob(self, name, q_image, values):
+        assert name == "color" and values
+        return self.prob
+
+    def bonus(self, q_image, rows, weights):
+        return np.zeros(len(rows))
+
+
+def test_product_photo_description_uses_general_hybrid(searcher) -> None:
+    searcher.attributes = FakeProbe(0.9)  # 사진이 요청한 색과 같음 → 색 변경이 아니라 설명
+    [g] = _style(searcher, None).search(_photo(), "white sneakers").groups
+    assert g.slot == "all" and g.basis == WHOLE_PHOTO_TEXT and g.result.search_type == SearchType.HYBRID
+    assert g.filters == ["text:white sneakers"] and g.result.items[0]["color"]
+
+    [g] = _style(searcher, None).search(_photo(), "floral").groups  # 사전에 없는 영어 단어만 있어도
+    assert g.basis == WHOLE_PHOTO_TEXT and g.filters == ["text:floral"]
+
+
+def test_product_photo_color_change_uses_color_filter(searcher) -> None:
+    searcher.attributes = FakeProbe(0.01)  # 사진이 요청한 색이 아님 → 그 색 상품 안에서 가장 비슷한 것
+    for text in ("white", "흰색으로"):
+        [g] = _style(searcher, None).search(_photo(), text).groups
+        assert g.basis == WHOLE_PHOTO and g.filters == ["color:white"]
+        assert _ids(g) == ["hm_0000000004"] and g.result.search_type == SearchType.IMAGE
+
+    searcher.attributes = FakeProbe(0.9)  # 같은 색이어도 한국어는 CLIP에 넣지 않으므로 색 조건
+    [g] = _style(searcher, None).search(_photo(), "흰색으로").groups
+    assert g.basis == WHOLE_PHOTO and g.filters == ["color:white"]
+
+
+def test_product_photo_routes_that_keep_conditions(searcher) -> None:
+    s = _style(searcher, None)
+    [g] = s.search(_photo(), "바지").groups  # 한국어 종류
+    assert g.slot == "bottom" and set(_ids(g)) == {"hm_0000000002", "hm_0000000003"}
+
+    [g] = s.search(_photo(), "소매 더 짧게").groups  # 디테일
+    assert g.filters == ["sleeve:down"]
+
+    [g] = s.search(_photo(), "이 옷이랑 어울리는 신발").groups  # 어울림
+    assert g.slot == "shoes" and _ids(g) == ["hm_0000000004"]
+
+    [g] = s.search(_photo(), audience="women").groups  # 고객층을 직접 고르면 그 안에서
+    assert g.result.total_count == 5 and "hm_0000000003" not in _ids(g)
+
+
+def test_product_photo_unknown_korean_text_is_image_search(searcher) -> None:
+    [g] = _style(searcher, None).search(_photo(), "예쁜 옷 찾아줘").groups
+    assert g.basis == WHOLE_PHOTO and g.filters == [] and g.result.search_type == SearchType.IMAGE
+
+
+def test_person_photo_free_text_scores_each_item(searcher) -> None:
+    searcher.cfg["hybrid"]["text_weight"] = 0.8
+    s = _style(searcher, [_raw("tee", TOP_BOX), _raw("pants", BOTTOM_BOX)])
+    plain = s.search(_photo()).groups[1]
+    assert _ids(plain)[0] == "hm_0000000002"
+
+    top, bottom = s.search(_photo(), "floral").groups  # 가짜 인코더의 문장 벡터는 e5 → 5번 상품 쪽
+    assert bottom.filters == ["text:floral"] and bottom.result.search_type == SearchType.HYBRID
+    assert _ids(bottom)[0] == "hm_0000000005" and bottom.basis == PHOTO_ITEM
+    assert set(_ids(top)) == {"hm_0000000000", "hm_0000000001"}  # 그 부위 안에서만
 
 
 def test_audience_filter(searcher) -> None:
