@@ -157,6 +157,8 @@ def test_image_search_attribute_bonus(searcher, tmp_path) -> None:
     q = searcher._image_emb_for_test[0]  # 0번 상품 사진 (Black, Vest top)
     bonus = probe.bonus(q, np.arange(6), {"color": 1.0, "category": 0.0})
     assert bonus.argmax() in (0, 4) and bonus[0] > bonus[1]  # 검은색 상품(0, 4)에 가점, 흰색(1)보다 크게
+    assert probe.class_prob("color", q, ["Black"]) > probe.class_prob("color", q, ["White"])
+    assert probe.class_prob("color", q, ["Black", "White"]) > probe.class_prob("color", q, ["Black"])
 
     searcher.attributes = probe
     plain = searcher.search(None, q, top_k=6)
@@ -164,6 +166,16 @@ def test_image_search_attribute_bonus(searcher, tmp_path) -> None:
     searcher.cfg["image_query"] = {"color_weight": 1.0, "category_weight": 1.0}
     boosted = searcher.search(None, q, top_k=6)
     assert boosted.product_ids[0] == "hm_0000000000" and boosted.scores[0] > 1.0
+
+
+def test_rank_rows_combines_text(searcher) -> None:
+    image = searcher._image_emb_for_test
+    rows = np.arange(6)
+    assert searcher.rank_rows(image[4], rows, 1).product_ids == ["hm_0000000004"]  # 문장 없으면 이미지 유사도
+    searcher.cfg["hybrid"]["text_weight"] = 0.9
+    result = searcher.rank_rows(image[4], rows, 1, q_text=image[3])
+    assert result.product_ids == ["hm_0000000003"] and result.search_type == SearchType.HYBRID
+    assert searcher.rank_rows(image[4], np.array([], dtype=int), 1, q_text=image[3]).product_ids == []
 
 
 def test_bm25_baseline() -> None:

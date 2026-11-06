@@ -1,4 +1,4 @@
-.PHONY: install catalog data split train index search-eval-set eval-search eval-style-search eval eval-rec bench up down test lint
+.PHONY: install catalog data split train index search-eval-set eval-search eval-style-search eval eval-rec bench up down test lint docker-train docker-eval docker-test
 
 install:        ## 로컬 개발 환경 설치
 	pip install -r requirements/dev.txt
@@ -42,6 +42,15 @@ up:
 
 down:
 	docker compose down
+
+docker-train:   ## Docker에서 추천 모델 학습 (결과: artifacts/models)
+	docker compose run --rm --build tools make train
+
+docker-eval:    ## Docker에서 오프라인 평가
+	docker compose run --rm --build tools make eval
+
+docker-test:    ## Docker(Python 3.10)에서 전체 테스트
+	docker compose run --rm --build tools make test
 
 test:
 	pytest -q

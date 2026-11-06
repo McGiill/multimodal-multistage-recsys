@@ -129,11 +129,21 @@ class StyleSearchResultItem(SearchResultItem):
     color: str
 
 
+class ProductInfo(BaseModel):
+    """GET /api/products/{product_id} — 추천 결과처럼 ID만 있는 상품을 화면에 보여줄 때."""
+
+    product_id: str
+    name: str
+    category: str                        # 소분류 (category_l3)
+    color: str
+    price: float                         # 달러
+
+
 class StyleSearchGroup(BaseModel):
     slot: str                            # 부위: outer / top / dress / bottom / shoes / ... (옷을 못 찾았으면 "all")
     slot_name: str                       # 화면 표시용 (아우터, 상의, ...)
     kind: str | None                     # 사진에서 찾은 옷 종류 (configs/style_search.yaml의 kinds)
-    basis: str                           # photo_item: 사진 속 그 옷 기준 | photo_style: 사진 전체 분위기 기준 | whole_photo
+    basis: str                           # photo_item: 사진 속 그 옷 기준 | photo_style: 사진 전체 분위기 기준 | whole_photo | whole_photo_text: 상품 사진 + 설명 문장
     box: list[int] | None                # 사진 속 위치 [x1, y1, x2, y2]
     box_source: str | None               # detector: 검출 | low_score: 콕 집은 부위라 낮은 점수 검출도 사용
                                          # | grounding: Grounding DINO로 다시 찾음 | user: 사용자가 지정한 영역

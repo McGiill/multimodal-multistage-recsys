@@ -26,11 +26,11 @@ flowchart LR
 
 ## 빠른 시작
 
+전체 서비스는 Docker로 실행합니다. 데이터(`data/`)와 모델·인덱스(`artifacts/`)는 Git에 없으므로 팀 공유본을 받아 넣거나 아래 `tools`로 만듭니다.
+
 ```bash
-cp .env.example .env
-make install            # 로컬 개발 환경
-./scripts/setup_all.sh  # 데이터 생성 → 분할 → 인덱스 → 학습 → 평가
-docker compose up       # redis, api(:8000), dashboard(:8501), simulator
+docker compose up --build   # redis, api(:8000), dashboard(:8501), simulator
+docker compose down         # 종료
 ```
 
 | 서비스 | 주소 |
@@ -38,11 +38,27 @@ docker compose up       # redis, api(:8000), dashboard(:8501), simulator
 | API docs | http://localhost:8000/docs |
 | Dashboard | http://localhost:8501 |
 
+포트가 겹치면 `API_HOST_PORT`, `DASHBOARD_HOST_PORT`, `REDIS_HOST_PORT`로 바꿉니다.
+
+학습·평가·테스트도 같은 환경에서 실행합니다 (`tools` 서비스, `up`에는 포함되지 않음).
+
+```bash
+make docker-train                                   # 추천 모델 학습 → artifacts/models
+make docker-eval                                    # 오프라인 평가
+make docker-test                                    # 전체 테스트
+docker compose run --rm tools make data             # 시뮬레이터 데이터 생성
+docker compose run --rm tools make split            # 시간 기준 분할
+docker compose run --rm tools make index            # 검색 인덱스 구축
+```
+
+라이브러리 버전은 `requirements/constraints.txt`로 고정되어 있습니다.
+
 ## API
 
 - `POST /api/search` — `query_text`, `image`, `top_k` → `search_type`, `results[]`, `latency_ms`, `total_count`
 - `GET /api/recommend?user_id=U1234&top_n=10` → `user_id`, `recommendations[]`, `pipeline_latency`, `session_context`
 - `POST /api/events` — 클릭 이벤트 수신 (Redis 실시간 피처 갱신)
+- `GET /api/products/{product_id}` — 상품 이름, 소분류, 색, 가격 (`/image`는 상품 사진)
 
 응답 스키마: [`src/common/schemas.py`](src/common/schemas.py)
 

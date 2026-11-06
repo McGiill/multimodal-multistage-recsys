@@ -1,4 +1,10 @@
-"""스타일 사진 검색 데모: 패션 사진 (+ 텍스트) → 사진 속 옷마다 비슷한 상품 (POST /api/search/style).
+"""검색 데모: 구현한 검색 기능을 입력에 따라 한 화면에서 보여준다.
+
+- 텍스트만                : 텍스트 검색 (POST /api/search)
+- 상품 사진               : 이미지 검색 (POST /api/search/style → 일반 검색과 같은 코드)
+- 상품 사진 + 설명 문장   : 하이브리드 검색 (같은 경로)
+- 상품 사진 + 색 변경 등  : 조건 + 유사도 (같은 경로)
+- 착용 사진 (+ 텍스트)    : 옷 검출 후 옷별 검색 (같은 경로)
 
 API 서버가 떠 있어야 한다: uvicorn src.serving.main:app --port 8000
 상품 사진은 GET /api/products/{product_id}/image로 받아서 보여준다 (대시보드는 H&M 원본 폴더를 직접 읽지 않음).
@@ -11,6 +17,8 @@ import base64
 import hashlib
 import io
 import os
+import re
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
@@ -20,16 +28,17 @@ import streamlit as st
 from PIL import Image, ImageDraw, ImageOps
 
 API = os.getenv("API_BASE_URL", "http://localhost:8000")
-EXAMPLES = ["", "이런 스타일 옷 추천해줘", "이 옷이랑 어울리는 신발", "이 옷이랑 어울리는 바지", "하의 검은색으로",
-            "소매 더 짧게", "상의 빨간색으로"]
+EXAMPLES = ["", "black strap top", "floral summer dress", "red", "이런 스타일 옷 추천해줘", "이 옷이랑 어울리는 신발",
+            "이 옷이랑 어울리는 바지", "하의 검은색으로", "소매 더 짧게", "상의 빨간색으로"]
 AUDIENCE = {"자동": "auto", "여성": "women", "남성": "men", "아동": "kids", "전체": "all"}
 INTENT = {"style": "사진 속 옷 전부", "find": "지정한 옷 찾기", "match": "어울리는 옷 찾기"}
 PHOTO = {"style": "착용 사진 (옷 검출)", "product": "상품 사진 (사진 전체가 기준)"}
 BASIS = {"photo_item": "사진 속 옷과 비슷한 상품", "photo_style": "사진에 없는 종류 → 사진 분위기와 비슷한 상품",
-         "whole_photo": "사진 전체와 비슷한 상품"}
+         "whole_photo": "사진 전체와 비슷한 상품", "whole_photo_text": "사진 + 문장 결합 (하이브리드 검색)"}
+SEARCH_TYPE = {"text": "텍스트 검색", "image": "이미지 검색", "hybrid": "하이브리드 검색"}
 SOURCE = {"low_score": "요청한 부위라 점수가 낮은 검출도 사용", "grounding": "Grounding DINO로 찾음",
           "user": "직접 고른 영역"}
-FILTER = {"color": "색", "sleeve": "소매", "length": "기장", "rise": "밑위", "fit": "핏"}
+FILTER = {"color": "색", "sleeve": "소매", "length": "기장", "rise": "밑위", "fit": "핏", "text": "문장"}
 ARROW = {"up": "↑", "down": "↓"}
 COLORS = ["#e6194b", "#3cb44b", "#4363d8", "#f58231", "#911eb4", "#46f0f0", "#f032e6", "#bcf60c"]
 AUTO, DRAW = "auto", "draw"
@@ -43,6 +52,14 @@ def style_search(image_bytes: bytes, query: str, audience: str, top_k: int,
     body = {"image_base64": base64.b64encode(image_bytes).decode(), "query_text": query or None,
             "audience": audience, "top_k": top_k, "box": list(box) if box else None}
     r = requests.post(f"{API}/api/search/style", json=body, timeout=120)
+    if r.status_code != 200:
+        raise RuntimeError(f"{r.status_code}: {r.text}")
+    return r.json()
+
+
+@st.cache_data(show_spinner=False)
+def text_search(query: str, top_k: int) -> dict:
+    r = requests.post(f"{API}/api/search", json={"query_text": query, "top_k": top_k}, timeout=120)
     if r.status_code != 200:
         raise RuntimeError(f"{r.status_code}: {r.text}")
     return r.json()
@@ -91,10 +108,10 @@ def box_picker(image: Image.Image, key: str) -> tuple[int, int, int, int] | None
     return tuple(round(v / scale) for v in (x1, y1, x2, y2))
 
 
-def search_or_stop(photo: bytes, box: tuple[int, int, int, int] | None = None) -> dict:
+def call_or_stop(search: Callable[..., dict], *args: object) -> dict:
     try:
         with st.spinner("검색 중..."):
-            return style_search(photo, query.strip(), AUDIENCE[audience], top_k, box)
+            return search(*args)
     except requests.ConnectionError:
         st.error(f"API 서버에 연결할 수 없어요 ({API}). `uvicorn src.serving.main:app --port 8000`으로 먼저 띄워 주세요.")
     except RuntimeError as e:
@@ -102,21 +119,56 @@ def search_or_stop(photo: bytes, box: tuple[int, int, int, int] | None = None) -
     st.stop()
 
 
-st.set_page_config(page_title="스타일 사진 검색", layout="wide")
-st.header("스타일 사진 검색 — 패션 사진 + 요청 → 사진 속 옷과 비슷한 상품")
-st.caption(f"API: {API}/api/search/style · 상품은 H&M 카탈로그 50,000개")
+def search_or_stop(photo: bytes, box: tuple[int, int, int, int] | None = None) -> dict:
+    return call_or_stop(style_search, photo, query.strip(), AUDIENCE[audience], top_k, box)
+
+
+def load_images(ids: list[str]) -> dict[str, bytes | None]:
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        return dict(zip(ids, pool.map(product_image, ids)))
+
+
+def product_grid(items: list[dict], images: dict[str, bytes | None]) -> None:
+    cols = st.columns(4)
+    for i, item in enumerate(items):
+        with cols[i % 4]:
+            if images.get(item["product_id"]):
+                st.image(images[item["product_id"]], width="stretch")
+            detail = f"{item['category']} · {item['color']} · " if "category" in item else ""
+            st.caption(f"**{item['name']}**  \n{detail}${item['price']:.2f}  \n점수 {item['score']:.3f}")
+
+
+st.set_page_config(page_title="검색 데모", layout="wide")
+st.header("검색 데모 — 텍스트 · 사진 · 사진 + 텍스트")
+st.caption(f"API: {API}/api/search, /api/search/style · 상품은 H&M 카탈로그 50,000개")
 
 left, right = st.columns([1, 2], gap="large")
 with left:
-    upload = st.file_uploader("패션 사진 (사람이 옷을 입은 사진 또는 상품 사진)", type=["jpg", "jpeg", "png", "webp"])
-    example = st.selectbox("예시 요청", EXAMPLES, format_func=lambda t: t or "(요청 없음: 사진 속 옷 전부)")
-    query = st.text_input("요청 (선택, 직접 입력 가능)", value=example, key=f"query_{example}",
-                          placeholder="예: 이 옷이랑 어울리는 바지 / 소매 더 짧게 / 빨간색으로")
-    audience = st.radio("고객층", list(AUDIENCE), horizontal=True, help="자동: 착용 사진이면 사진 속 사람으로 판단")
-    top_k = st.slider("부위별 결과 수", 4, 20, 8, step=4)
+    upload = st.file_uploader("사진 (선택: 착용 사진 또는 상품 사진)", type=["jpg", "jpeg", "png", "webp"])
+    example = st.selectbox("예시 요청", EXAMPLES, format_func=lambda t: t or "(요청 없음)")
+    query = st.text_input("검색어 또는 요청 (선택, 직접 입력 가능)", value=example, key=f"query_{example}",
+                          placeholder="예: black strap top / floral summer dress / 소매 더 짧게 / 빨간색으로")
+    audience = st.radio("고객층 (사진 검색)", list(AUDIENCE), horizontal=True, help="자동: 착용 사진이면 사진 속 사람으로 판단")
+    top_k = st.slider("결과 수 (사진 검색은 부위별)", 4, 20, 8, step=4)
 
 if upload is None:
-    right.info("왼쪽에 패션 사진을 올려 주세요.")
+    if not query.strip():
+        right.info("왼쪽에 검색어를 입력하거나 사진을 올려 주세요.")
+        st.stop()
+    found = call_or_stop(text_search, query.strip(), top_k)
+    with left:
+        st.markdown(
+            f"- 검색 방식: **{SEARCH_TYPE[found['search_type']]}**\n"
+            f"- 후보 수: **{found['total_count']:,}개**\n"
+            f"- 응답시간: **{found['latency_ms']:.0f}ms**"
+        )
+        if re.search("[가-힣]", query):
+            st.warning("텍스트 검색은 영어 기준으로 만들어서 한국어 결과는 정확하지 않을 수 있어요.")
+    with right:
+        st.subheader(SEARCH_TYPE[found["search_type"]])
+        if not found["results"]:
+            st.warning("결과가 없어요.")
+        product_grid(found["results"], load_images([item["product_id"] for item in found["results"]]))
     st.stop()
 
 image = ImageOps.exif_transpose(Image.open(io.BytesIO(upload.getvalue()))).convert("RGB")
@@ -162,11 +214,11 @@ with left:
         f"- 고객층 제한: **{res['audience'] or '없음'}**\n"
         f"- 응답시간: **{res['latency_ms']:.0f}ms**"
     )
+    if query.strip() and res["intent"] == "style" and not any(g["filters"] for g in res["groups"]):
+        st.warning("요청을 해석하지 못해서 사진만으로 찾았어요. 사전에 있는 표현이나 영어 설명을 써 주세요.")
 
 with right:
-    ids = [item["product_id"] for g in res["groups"] for item in g["results"]]
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        images = dict(zip(ids, pool.map(product_image, ids)))
+    images = load_images([item["product_id"] for g in res["groups"] for item in g["results"]])
     if not res["groups"]:
         st.warning("결과가 없어요.")
     for g in res["groups"]:
@@ -180,10 +232,4 @@ with right:
         if not g["results"]:
             st.info("조건에 맞는 상품이 없어요 (색·디테일 조건을 바꿔 보세요).")
             continue
-        cols = st.columns(4)
-        for i, item in enumerate(g["results"]):
-            with cols[i % 4]:
-                if images.get(item["product_id"]):
-                    st.image(images[item["product_id"]], width="stretch")
-                st.caption(f"**{item['name']}**  \n{item['category']} · {item['color']} · ${item['price']:.2f}  \n"
-                           f"유사도 {item['score']:.3f}")
+        product_grid(g["results"], images)

@@ -187,12 +187,21 @@ class Searcher:
                 mask &= np.isin(column, list(values))
         return np.flatnonzero(mask)
 
-    def rank_rows(self, q_image: np.ndarray, rows: np.ndarray, top_k: int) -> SearchResult:
-        """주어진 상품들 안에서 이미지 유사도순. 조건으로 좁힌 후보는 수천 개라 인덱스 없이 전부 계산한다."""
+    def rank_rows(
+        self, q_image: np.ndarray, rows: np.ndarray, top_k: int,
+        q_text: np.ndarray | None = None, query_text: str | None = None,
+    ) -> SearchResult:
+        """주어진 상품들 안에서 이미지 유사도순. 조건으로 좁힌 후보는 수천 개라 인덱스 없이 전부 계산한다.
+        문장(q_text)이 있으면 텍스트 경로와 이미지 유사도를 hybrid.text_weight로 가중합한다."""
         scores = self.image_emb[rows] @ q_image
+        use_text = q_text is not None and len(rows) > 0
+        if use_text:
+            w = self.cfg["hybrid"]["text_weight"]
+            text_scores = self._text_route(q_text, rows, self._lexical(query_text))
+            scores = w * _minmax(text_scores) + (1 - w) * _minmax(scores)
         order = np.argsort(-scores)[:top_k]
         result = SearchResult(
-            search_type=SearchType.IMAGE,
+            search_type=SearchType.HYBRID if use_text else SearchType.IMAGE,
             product_ids=self.product_ids[rows[order]].tolist(),
             scores=[round(float(s), 4) for s in scores[order]],
             total_count=len(rows),
@@ -205,6 +214,12 @@ class Searcher:
     def search(self, query_text: str | None, image: Image.Image | None, top_k: int = 10) -> SearchResult:
         q_text = self.encoder.encode_texts([query_text])[0] if query_text else None
         q_image = self.encoder.encode_images([image])[0] if image is not None else None
+        return self.search_encoded(q_text, q_image, top_k, query_text)
+
+    def search_encoded(
+        self, q_text: np.ndarray | None, q_image: np.ndarray | None, top_k: int, query_text: str | None = None
+    ) -> SearchResult:
+        """search_vectors + 결과의 상품 정보 (사진을 이미 인코딩한 스타일 사진 검색에서 호출)."""
         result = self.search_vectors(q_text, q_image, top_k, query_text)
         result.items = self._items(result)
         return result

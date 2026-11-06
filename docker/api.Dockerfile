@@ -2,7 +2,7 @@ FROM python:3.10-slim
 WORKDIR /app
 ENV PYTHONUNBUFFERED=1
 COPY requirements/ requirements/
-RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu -r requirements/api.txt
+RUN pip install --no-cache-dir --root-user-action=ignore --extra-index-url https://download.pytorch.org/whl/cpu -c requirements/constraints.txt -r requirements/api.txt
 COPY src/ src/
 COPY configs/ configs/
 EXPOSE 8000

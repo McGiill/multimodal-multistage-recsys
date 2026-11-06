@@ -69,9 +69,10 @@ class AttributeProbe:
     def __init__(self, path: Path, item_values: dict[str, np.ndarray]) -> None:
         """item_values: 속성 이름(color / category) → 상품별 값 (검색기의 상품 순서)."""
         data = np.load(path, allow_pickle=False)
-        self.w, self.b, self.item_class = {}, {}, {}
+        self.classes, self.w, self.b, self.item_class = {}, {}, {}, {}
         for name in COLUMNS:
             classes = data[f"{name}_classes"]
+            self.classes[name] = classes
             self.w[name], self.b[name] = data[f"{name}_w"], data[f"{name}_b"]
             lookup = {c: i for i, c in enumerate(classes)}
             # 분류기 학습 뒤 카탈로그에 새로 생긴 속성 값은 -1 → 가점 0
@@ -84,6 +85,11 @@ class AttributeProbe:
                 prob = np.append(_softmax(self.w[name] @ q_image + self.b[name]), 0.0)  # 마지막 칸 = 모르는 값(-1)
                 total += weight * prob[self.item_class[name][rows]]
         return total
+
+    def class_prob(self, name: str, q_image: np.ndarray, values: list[str]) -> float:
+        """쿼리 사진의 속성이 values 중 하나일 확률 (스타일 검색의 색 변경 판단)."""
+        prob = _softmax(self.w[name] @ q_image + self.b[name])
+        return float(prob[np.isin(self.classes[name], values)].sum())
 
 
 def main() -> None:
