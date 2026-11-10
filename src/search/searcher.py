@@ -65,10 +65,12 @@ class Searcher:
             raise ValueError(f"인덱스 모델({meta['model_name']})과 설정 모델이 다릅니다")
 
         ids = pd.read_parquet(d / "product_ids.parquet")["product_id"]
-        columns = ["product_id", "name", "price", "category_l1", "category_l3", "color"]
+        columns = ["product_id", "product_code", "name", "price", "category_l1", "category_l3", "color"]
         catalog = load_catalog(self.cfg, columns=columns).set_index("product_id")
         catalog = catalog.loc[ids].reset_index()
         self.product_ids = catalog["product_id"].to_numpy()
+        self.product_codes = catalog["product_code"].to_numpy()
+        self.row_of = {pid: i for i, pid in enumerate(self.product_ids)}
         self.names = catalog["name"].to_numpy()
         self.prices = catalog["price"].to_numpy()
         self.category_l1 = catalog["category_l1"].to_numpy()
@@ -138,32 +140,38 @@ class Searcher:
             return similarity
         return _minmax(similarity) + self.attributes.bonus(q_i, cand, weights)
 
+    def _restrict(self, cand: np.ndarray, l1: Iterable[str] | None) -> np.ndarray:
+        """후보 중 고객층(category_l1)이 l1에 있는 상품만. None이면 그대로."""
+        return cand if l1 is None else cand[np.isin(self.category_l1[cand], list(l1))]
+
     def search_vectors(
-        self, q_text: np.ndarray | None, q_image: np.ndarray | None, top_k: int, query_text: str | None = None
+        self, q_text: np.ndarray | None, q_image: np.ndarray | None, top_k: int, query_text: str | None = None,
+        l1: Iterable[str] | None = None,
     ) -> SearchResult:
-        """이미 인코딩된 쿼리 벡터로 검색 (평가 스크립트가 배치 인코딩 후 호출). BM25는 query_text가 있을 때만."""
+        """이미 인코딩된 쿼리 벡터로 검색 (평가 스크립트가 배치 인코딩 후 호출). BM25는 query_text가 있을 때만.
+        l1: 고객층(category_l1) 제한 (쇼핑몰 화면의 여성 / 남성 / 아동). 인덱스 후보 중에서 거른다."""
         lexical = self._lexical(query_text) if q_text is not None else None
         if q_text is not None and q_image is not None:
             search_type = SearchType.HYBRID
-            cand = np.unique(np.concatenate([
+            cand = self._restrict(np.unique(np.concatenate([
                 self._candidates(self.image_index, q_text), self._candidates(self.text_index, q_text),
                 self._candidates(self.image_index, q_image), *self._lexical_candidates(lexical),
-            ]))
+            ])), l1)
             w = self.cfg["hybrid"]["text_weight"]
             scores = w * _minmax(self._text_route(q_text, cand, lexical)) + (1 - w) * _minmax(
                 self._image_route(q_image, cand)
-            )
+            ) if len(cand) else np.zeros(0)
         elif q_text is not None:
             search_type = SearchType.TEXT
-            cand = np.unique(np.concatenate([
+            cand = self._restrict(np.unique(np.concatenate([
                 self._candidates(self.image_index, q_text), self._candidates(self.text_index, q_text),
                 *self._lexical_candidates(lexical),
-            ]))
-            scores = self._text_route(q_text, cand, lexical)
+            ])), l1)
+            scores = self._text_route(q_text, cand, lexical) if len(cand) else np.zeros(0)
         elif q_image is not None:
             search_type = SearchType.IMAGE
-            cand = self._candidates(self.image_index, q_image)
-            scores = self._image_route(q_image, cand)
+            cand = self._restrict(self._candidates(self.image_index, q_image), l1)
+            scores = self._image_route(q_image, cand) if len(cand) else np.zeros(0)
         else:
             raise ValueError("query_text 또는 image 중 하나는 필요합니다")
 
@@ -210,17 +218,47 @@ class Searcher:
         result.items = self._items(result)
         return result
 
+    # ------------------------------------------------------------------ 상품 → 비슷한 상품 (쇼핑몰 상품 상세)
+    def similar_products(self, product_id: str, top_k: int, l1: Iterable[str] | None = None) -> SearchResult:
+        """상품 사진이 비슷한 다른 상품. 저장된 상품 이미지 임베딩을 쿼리로 이미지 검색과 같은 점수
+        (사진 유사도 + 색·소분류 가점)를 쓴다. 같은 디자인(product_code, 기준 상품의 다른 색 포함)은 빼고
+        디자인마다 1개만 남긴다. 카탈로그에 없는 상품이면 KeyError."""
+        row = self.row_of[product_id]
+        q = self.image_emb[row]
+        cand = self._restrict(self._candidates(self.image_index, q), l1)
+        scores = self._image_route(q, cand) if len(cand) else np.zeros(0)
+        seen, keep = {self.product_codes[row]}, []
+        for i in np.argsort(-scores):
+            code = self.product_codes[cand[i]]
+            if code not in seen:
+                seen.add(code)
+                keep.append(i)
+            if len(keep) == top_k:
+                break
+        keep = np.array(keep, dtype=int)
+        result = SearchResult(
+            search_type=SearchType.IMAGE,
+            product_ids=self.product_ids[cand[keep]].tolist(),
+            scores=[round(float(s), 4) for s in scores[keep]],
+            total_count=len(cand),
+            rows=cand[keep],
+        )
+        result.items = self._items(result)
+        return result
+
     # ------------------------------------------------------------------ API 진입점
-    def search(self, query_text: str | None, image: Image.Image | None, top_k: int = 10) -> SearchResult:
+    def search(self, query_text: str | None, image: Image.Image | None, top_k: int = 10,
+               l1: Iterable[str] | None = None) -> SearchResult:
         q_text = self.encoder.encode_texts([query_text])[0] if query_text else None
         q_image = self.encoder.encode_images([image])[0] if image is not None else None
-        return self.search_encoded(q_text, q_image, top_k, query_text)
+        return self.search_encoded(q_text, q_image, top_k, query_text, l1)
 
     def search_encoded(
-        self, q_text: np.ndarray | None, q_image: np.ndarray | None, top_k: int, query_text: str | None = None
+        self, q_text: np.ndarray | None, q_image: np.ndarray | None, top_k: int, query_text: str | None = None,
+        l1: Iterable[str] | None = None,
     ) -> SearchResult:
         """search_vectors + 결과의 상품 정보 (사진을 이미 인코딩한 스타일 사진 검색에서 호출)."""
-        result = self.search_vectors(q_text, q_image, top_k, query_text)
+        result = self.search_vectors(q_text, q_image, top_k, query_text, l1)
         result.items = self._items(result)
         return result
 

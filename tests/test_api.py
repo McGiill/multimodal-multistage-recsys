@@ -1,5 +1,6 @@
 import base64
 from io import BytesIO
+from typing import ClassVar
 
 import numpy as np
 import pandas as pd
@@ -23,12 +24,24 @@ from src.serving.routers.search import (
 class FakeSearcher:
     """모델·인덱스 없이 API 형식만 확인하기 위한 가짜 검색기."""
 
-    def search(self, query_text, image, top_k=10):
+    row_of: ClassVar[dict[str, int]] = {"hm_0108775015": 0, "hm_0108775044": 1}
+    category_l1 = np.array(["Ladieswear", "Ladieswear"])
+    category_l3 = np.array(["Vest top", "Vest top"])
+    colors = np.array(["Black", "White"])
+    last_l1 = "unset"
+
+    def search(self, query_text, image, top_k=10, l1=None):
+        FakeSearcher.last_l1 = l1
         search_type = (
             SearchType.HYBRID if query_text and image is not None else SearchType.IMAGE if image is not None else SearchType.TEXT
         )
         items = [{"product_id": "hm_0108775015", "name": "Strap top", "score": 0.91, "price": 25000}][:top_k]
         return SearchResult(search_type, [i["product_id"] for i in items], [0.91], 37, np.array([0]), items)
+
+    def similar_products(self, product_id, top_k, l1=None):
+        FakeSearcher.last_l1 = l1
+        items = [{"product_id": "hm_0108775044", "name": "Strap top", "score": 0.8, "price": 9.99}]
+        return SearchResult(SearchType.IMAGE, ["hm_0108775044"], [0.8], 120, np.array([1]), items)
 
 
 class FakeStyleSearcher:
@@ -146,3 +159,30 @@ def test_product_image(tmp_path) -> None:
         assert client.get("/api/products/hm_9999999999/image").status_code == 404  # 카탈로그에 없는 상품
     finally:
         del app.dependency_overrides[get_product_images]
+
+
+def test_search_audience_filter() -> None:
+    assert client.post("/api/search", json={"query_text": "top", "audience": "men"}).status_code == 200
+    assert FakeSearcher.last_l1 == ["Menswear", "Sport"]  # configs/style_search.yaml audience.groups
+    client.post("/api/search", json={"query_text": "top", "audience": "all"})
+    assert FakeSearcher.last_l1 is None
+    assert client.post("/api/search", json={"query_text": "top", "audience": "aliens"}).status_code == 422
+
+
+def test_similar_products() -> None:
+    r = client.get("/api/products/hm_0108775015/similar", params={"top_k": 4})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["product_id"] == "hm_0108775015" and body["total_count"] == 120
+    assert body["results"][0] | {"score": 0} == {"product_id": "hm_0108775044", "name": "Strap top", "score": 0,
+                                                 "price": 9.99, "category": "Vest top", "color": "White"}
+    assert "Ladieswear" in FakeSearcher.last_l1 and "Menswear" not in FakeSearcher.last_l1  # 기본: 같은 고객층
+    client.get("/api/products/hm_0108775015/similar", params={"audience": "all"})
+    assert FakeSearcher.last_l1 is None
+    assert client.get("/api/products/hm_9999999999/similar").status_code == 404
+
+
+def test_shop_page_served() -> None:
+    r = client.get("/shop/")
+    assert r.status_code == 200 and "shop.js" in r.text
+    assert client.get("/shop/shop.js").status_code == 200

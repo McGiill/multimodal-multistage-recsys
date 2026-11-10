@@ -29,21 +29,30 @@ class RecommendationModels:
             != self.store.item_ids
         ):
             raise ValueError("Index ID mismatch")
+        self.objective = self.cfg["ranking"].get("objective", "cvr")  # ctcvr: 노출 후 구매, ctr: 클릭, cvr: 조회 후 구매
+        self.features = self.cfg["ranking"].get("features", 1)  # 2: Two-Tower 취향 점수·인기·경과일 등 추가 (rank_features)
+        self.item_vectors = np.load(folder / "item_vectors.npy") if self.features >= 2 else None
         self.ranker = make_model(self.store, self.cfg)
         self.ranker.load_state_dict(
-            torch.load(folder / "ranking_cvr.pt", map_location="cpu", weights_only=True)
+            torch.load(folder / f"ranking_{self.objective}.pt", map_location="cpu", weights_only=True)
         )
         self.ranker.eval()
         self.retriever = Retriever(self.tower, self.index, self.store)
 
     @torch.inference_mode()
     def score(self, ids, state, at):
-        h, _length, p = state
+        h, length, p = state
         n = len(ids)
         if n == 0:
             return np.array([], dtype=np.float32)
+        affinity = None
+        if self.features >= 2:  # Two-Tower 취향 점수 = 사용자 벡터 · 상품 벡터 (학습 때와 같은 계산)
+            q = self.tower.user(
+                torch.from_numpy(p[None]), torch.from_numpy(h[None]), torch.tensor([length])
+            ).numpy()[0]
+            affinity = self.item_vectors[np.asarray(ids) - 1] @ q
         s, d = rank_features(
-            self.store, ids, np.tile(h, (n, 1)), np.tile(p, (n, 1)), np.full(n, at)
+            self.store, ids, np.tile(h, (n, 1)), np.tile(p, (n, 1)), np.full(n, at), self.features, affinity
         )
         return self.ranker(torch.as_tensor(s), torch.as_tensor(d)).sigmoid().numpy()
 

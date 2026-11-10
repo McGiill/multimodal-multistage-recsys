@@ -25,6 +25,8 @@ NEW_USER = "NEW_USER"  # 데이터에 없는 ID → 이력 없는 사용자
 USERS = ["U00005", "U00020", "U00036", "U00002", NEW_USER]
 DIRECT = "직접 입력"
 REASON = {
+    "ctcvr": ("구매 확률순", "gray"),
+    "ctr": ("클릭 확률순", "gray"),
     "cvr": ("구매 확률순", "gray"),
     "mab_exploration": ("탐색 칸 (MAB)", "orange"),
     "new_item": ("신규 상품 칸", "green"),
@@ -83,7 +85,8 @@ def score_text(item: dict, is_cold: bool) -> str:
     # cold start는 탐색 칸도 인기·트렌딩 목록에서 고르므로 점수가 구매 확률이 아니다. 신규 상품 칸만 DeepFM 점수.
     if is_cold and item["reason"] != "new_item":
         return f"인기·트렌딩 점수 {item['score']:.2f}"
-    return f"구매 확률 추정 {item['score']:.2%}"
+    kind = "클릭" if item["reason"] == "ctr" else "구매"  # Stage 2 학습 목표 (configs/recommend.yaml ranking.objective)
+    return f"{kind} 확률 추정 {item['score']:.2%}"
 
 
 def product_card(item: dict, product: tuple[dict | None, bytes | None], is_changed: bool, is_cold: bool) -> None:
@@ -158,7 +161,7 @@ previous_ids = {i["product_id"] for i in previous["recommendations"]} if previou
 changed = [i for i in items if previous_ids is not None and i["product_id"] not in previous_ids]
 
 st.subheader(f"추천 상품 {len(items)}개")
-st.caption(f"기준 시각 {DEMO_AT[:10]} (로그 데이터가 끝나는 시점) · 구매 확률 추정값은 정렬용 점수이고, 실제 구매율로 검증하지 않았어요.")
+st.caption(f"기준 시각 {DEMO_AT[:10]} (로그 데이터가 끝나는 시점) · 확률 추정값은 정렬용 점수이고, 실제 클릭·구매율로 검증하지 않았어요.")
 is_cold = any(i["reason"] in COLD_START for i in items)
 if is_cold:
     st.info("조회 이력이 적어 인기·트렌딩 상품으로 대체했어요 (cold start).")

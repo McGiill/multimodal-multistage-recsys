@@ -5,12 +5,15 @@ POST /api/search/style — 스타일 사진(사람이 옷을 입은 사진) + �
 - JSON      : {"query_text": "black strap top", "image_base64": "<base64>", "top_k": 10}
 - multipart : query_text=..., image=<파일>, top_k=10
 /api/search: 텍스트만 있으면 text, 이미지만 있으면 image, 둘 다 있으면 hybrid.
+             audience(선택): all(기본) / women / men / kids → 그 고객층(category_l1) 상품만 (쇼핑몰 화면)
 /api/search/style: 사진 필수. 텍스트 예 "이 옷이랑 어울리는 바지", "소매 더 짧게".
                    상품 사진 + 사진만 / 설명 문장은 /api/search와 같은 검색, 색 변경·종류·디테일 요청은 조건 + 유사도.
                    audience(선택): auto(기본) / all / women / men / kids
                    box(선택): 검색할 영역 [x1, y1, x2, y2] (사진 픽셀, multipart는 "x1,y1,x2,y2")
 GET /api/products/{product_id} — 상품 이름·소분류·색·가격 (추천 결과처럼 ID만 있는 상품을 보여줄 때)
 GET /api/products/{product_id}/image — 상품 사진 (데모 화면 등에서 결과를 보여줄 때)
+GET /api/products/{product_id}/similar — 사진이 비슷한 다른 상품 (쇼핑몰 상품 상세, 같은 디자인 제외)
+                                         top_k(기본 8), audience(기본: 기준 상품과 같은 고객층 / all / women / men / kids)
 """
 
 from __future__ import annotations
@@ -24,7 +27,7 @@ from pathlib import Path
 from typing import Annotated
 
 import pandas as pd
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from PIL import Image, UnidentifiedImageError
@@ -34,6 +37,7 @@ from src.common.schemas import (
     ProductInfo,
     SearchResponse,
     SearchResultItem,
+    SimilarProductsResponse,
     StyleDetection,
     StyleSearchGroup,
     StyleSearchResponse,
@@ -116,17 +120,36 @@ def _parse_box(value: object, image_size: tuple[int, int]) -> Box | None:
     return box
 
 
+def _audience_l1(audience: object) -> list[str] | None:
+    """고객층 이름 → category_l1 목록 (configs/style_search.yaml audience.groups). 없거나 all이면 None (제한 없음)."""
+    if audience in (None, "", "all"):
+        return None
+    groups = load_config("style_search")["audience"]["groups"]
+    if audience not in groups:
+        raise HTTPException(422, f"audience는 all / {' / '.join(groups)} 중 하나")
+    return list(groups[audience]["category_l1"])
+
+
+def _same_audience_l1(category_l1: str) -> list[str] | None:
+    """기준 상품과 같은 고객층: 그 category_l1이 들어 있는 고객층 묶음의 category_l1 전부 (예: Ladieswear → 여성복 전체).
+    어느 묶음에도 없으면 None (제한 없음)."""
+    groups = load_config("style_search")["audience"]["groups"].values()
+    same = sorted({c for g in groups if category_l1 in g["category_l1"] for c in g["category_l1"]})
+    return same or None
+
+
 @router.post("/search", response_model=SearchResponse)
 async def search(request: Request, searcher: Annotated[Searcher, Depends(get_searcher)]) -> SearchResponse:
     t0 = time.perf_counter()
-    query_text, image_bytes, top_k, _ = await _parse(request, load_config("search")["default_top_k"])
+    query_text, image_bytes, top_k, fields = await _parse(request, load_config("search")["default_top_k"])
     if not query_text and image_bytes is None:
         raise HTTPException(422, "query_text 또는 image 중 하나는 필요합니다")
     if not 1 <= top_k <= 100:
         raise HTTPException(422, "top_k는 1~100 사이여야 합니다")
+    l1 = _audience_l1(fields.get("audience"))
 
     image = _open_image(image_bytes) if image_bytes is not None else None
-    result = await run_in_threadpool(searcher.search, query_text, image, top_k)
+    result = await run_in_threadpool(searcher.search, query_text, image, top_k, l1)
     return SearchResponse(
         search_type=result.search_type,
         results=[SearchResultItem(**item) for item in result.items],
@@ -189,6 +212,27 @@ def product_info(product_id: str, catalog: Annotated[pd.DataFrame, Depends(get_p
     row = catalog.loc[product_id]
     return ProductInfo(product_id=product_id, name=row["name"], category=row["category_l3"], color=row["color"],
                        price=row["price"])
+
+
+@router.get("/products/{product_id}/similar", response_model=SimilarProductsResponse)
+async def similar_products(
+    product_id: str,
+    searcher: Annotated[Searcher, Depends(get_searcher)],
+    top_k: Annotated[int, Query(ge=1, le=50)] = 8,
+    audience: str | None = None,
+) -> SimilarProductsResponse:
+    t0 = time.perf_counter()
+    if product_id not in searcher.row_of:
+        raise HTTPException(404, "상품이 없습니다")
+    l1 = _same_audience_l1(searcher.category_l1[searcher.row_of[product_id]]) if audience is None else _audience_l1(audience)
+    result = await run_in_threadpool(searcher.similar_products, product_id, top_k, l1)
+    return SimilarProductsResponse(
+        product_id=product_id,
+        results=[StyleSearchResultItem(**item, category=str(searcher.category_l3[r]), color=str(searcher.colors[r]))
+                 for item, r in zip(result.items, result.rows)],
+        latency_ms=round((time.perf_counter() - t0) * 1000, 2),
+        total_count=result.total_count,
+    )
 
 
 @router.get("/products/{product_id}/image")

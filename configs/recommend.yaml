@@ -1,5 +1,7 @@
 seed: 42
-version: stage12-cvr-team-v20261022
+version: stage12-ctcvr-v20261110c  # Stage 2를 노출 후 구매(ctcvr) + 특징 v2로 다시 학습 (Stage 1은 v20261110b와 같음)
+                                   # 이전: stage12-ctr-v20261110b (클릭 예측) / stage12-cvr-v20261110-regen (1차 재생성)
+                                   #       / stage12-cvr-team-v20261022 (팀 모델)
 threads: 4
 validation_limit: 10000
 
@@ -16,8 +18,13 @@ candidate:
   faiss_index_type: hnsw
 
 ranking:
-  objective: cvr
-  cvr_window_seconds: 86400
+  objective: ctcvr        # 노출 후 구매 확률 (2026-11-10 결정): 보여준 상품 중 구매 = 1, 안 누름 + 눌렀지만 안 삼 = 0
+                          #   → 목적(구매)과 명세 음성 규칙("Ranking: 노출 후 비클릭 implicit negative")을 함께 지킴
+                          # ctr: 클릭 = 1, 보여줬지만 안 누름 = 0 / cvr: 조회한 상품 중 24시간 안 구매 = 1 (이전 방식)
+  impression_negatives: 4 # 음성: 클릭 1개당 같은 노출 목록에서 안 누른 상품 4개 (무작위, seed 고정)
+  cvr_window_seconds: 86400 # 구매를 앞선 클릭(조회)에 연결하는 기간 (ctcvr, cvr)
+  features: 2             # 1: 기존 / 2: + 이력과 중분류·소분류·브랜드·색 일치, Two-Tower 취향 점수, 최근 7일 인기,
+                          #    등록 후 경과일·신상품 여부 (ranking/features.py rank_features)
   model: deepfm           # deepfm | wide_deep
   embedding_dim: 16
   dnn_hidden: [256, 128]
@@ -33,6 +40,11 @@ session:
   max_len: 10             # 세션 최근 클릭 몇 개까지 볼지
   min_len: 2              # 학습에 쓰는 세션 최소 조회 수 (다음 상품 맞히기라 2 이상)
   long_short_alpha: 0.6   # final = alpha*long(user tower) + (1-alpha)*short(session), 둘 다 코사인
+  live_history: true      # 저장된 이력 뒤에 최근 조회를 붙여 User Tower·DeepFM·cold-start 판단이 같이 씀 (2026-11-10)
+                          # 서빙: Feature Store의 사용자 최근 조회(이번·이전 방문), 오프라인 평가: 세션 클릭
+                          # false: 저장된 이력만 (이전 동작, 기존 평가 결과 재현용)
+  blend_candidates: true  # 장기+세션 결합 점수(long_short_alpha) 상위 n_candidates개로 후보를 자른 뒤 DeepFM 정렬
+                          # false: 결합 점수를 버리고 후보 전부를 DeepFM으로 정렬 (이전 동작)
   temperature: 0.1        # 학습 softmax 온도 (코사인 점수 → logit)
   epochs: 5
   lr: 0.001
@@ -40,13 +52,13 @@ session:
   eval_k: 20              # 다음 상품 맞히기 HitRate@k / MRR@k
   n_candidates: 50        # 세션 관심으로 Stage 1 후보에 추가할 상품 수
   interest_field: category_l2   # session_interest 라벨 (명세 예시: "아우터")
-  model_file: session_encoder.pt
+  model_file: session_encoder_v20261110b.pt  # 이전: session_encoder_v20261110.pt (1차 재생성), session_encoder.pt (팀 모델)
 
 reranking:
   category_field: category_l2       # 다양성 기준 category_l1 | category_l2 | category_l3
   dedupe_field: product_code        # 같은 디자인 색상 변형은 1개만 (null이면 product_id만)
   max_same_category_run: 2          # 동일 카테고리 연속 3개 이상 금지
-  cold_start_min_events: 5          # 이력 5개 미만 → 인기+트렌딩 대체
+  cold_start_min_events: 5          # 이력 5개 미만 → 인기+트렌딩 대체 (이력 = 저장된 조회 + 최근 조회, session.live_history)
   popular_trending_ratio: [1, 1]    # cold-start 인기:트렌딩 교차 비율
   popularity:                       # cold-start 목록 (요청 시각 이전 기록만, reranking/popularity.py)
     window_days: 7                  # 인기 = 최근 7일 구매 수 / 트렌딩 비교 기간

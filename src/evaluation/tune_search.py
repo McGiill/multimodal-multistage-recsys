@@ -7,7 +7,8 @@
 1. text   : text_query.image_weight × text_query.bm25_weight   (텍스트 쿼리)
 2. image  : image_query.color_weight × image_query.category_weight (이미지 쿼리, 색·소분류 분류기가 있을 때)
 3. hybrid : hybrid.text_weight                                   (하이브리드 쿼리)
-쿼리는 한 번만 인코딩하고 가중치만 바꿔 다시 채점한다. 결과: artifacts/metrics/tune_<모델>.json
+쿼리는 한 번만 인코딩하고 가중치만 바꿔 다시 채점한다. 결과: artifacts/metrics/tune_<모델>[_<정답 기준>].json
+(정답 기준 eval.relevance가 기존 기준(design)이 아니면 파일 이름 끝에 붙여서 기존 결과를 덮어쓰지 않는다)
 → 고른 값을 configs/search.yaml에 옮겨 적는다.
 """
 
@@ -21,7 +22,7 @@ import numpy as np
 import pandas as pd
 
 from src.common.config import ROOT, load_config
-from src.evaluation.eval_search import score
+from src.evaluation.eval_search import relevance_tag, score
 from src.search.catalog import model_slug, with_overrides
 from src.search.searcher import Searcher
 
@@ -114,10 +115,11 @@ def main() -> None:
                              {("hybrid", "text_weight"): GRID})
     chosen |= choose(searcher, sweeps["hybrid"])
 
-    out = ROOT / cfg["paths"]["metrics_dir"] / f"tune_{model_slug(model)}.json"
+    out = ROOT / cfg["paths"]["metrics_dir"] / f"tune_{model_slug(model)}{relevance_tag(cfg)}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps({"model_name": model, "chosen": chosen, "sweeps": sweeps}, ensure_ascii=False, indent=2),
-                   encoding="utf-8")
+    report = {"model_name": model, "relevance": cfg["eval"].get("relevance", "design"),
+              "eval_set": cfg["paths"]["eval_set"], "chosen": chosen, "sweeps": sweeps}
+    out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"\n[tune] configs/search.yaml에 옮겨 적을 값: {chosen}\n저장 → {out.relative_to(ROOT)}")
 
 

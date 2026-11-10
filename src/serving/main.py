@@ -1,4 +1,4 @@
-"""FastAPI 앱: uvicorn src.serving.main:app --port 8000
+"""FastAPI 앱: uvicorn src.serving.main:app --port 8000  (쇼핑몰 화면: http://localhost:8000/shop/)
 
 담당: D (라우터별 로직은 search=B, recommend=C/D)
 """
@@ -7,8 +7,10 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from src.common.config import env
 from src.serving.routers import events, recommend, search
@@ -37,6 +39,8 @@ app = FastAPI(title="Multimodal Search & Multi-Stage Recommender", lifespan=life
 app.include_router(search.router, prefix="/api", tags=["search"])
 app.include_router(recommend.router, prefix="/api", tags=["recommend"])
 app.include_router(events.router, prefix="/api", tags=["events"])
+# 통합 서비스(쇼핑몰) 화면: http://localhost:8000/shop/ — 취향조사 → 클릭 반영 추천 → 검색 (src/serving/shop/)
+app.mount("/shop", StaticFiles(directory=Path(__file__).parent / "shop", html=True), name="shop")
 
 
 @app.get("/health")

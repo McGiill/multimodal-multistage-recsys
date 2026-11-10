@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import numpy as np
 import pandas as pd
 import pyarrow as pa
+import pyarrow.parquet as pq
 
 from src.common.config import load_config
 from src.evaluation.eval_recommend import evaluate
@@ -60,6 +61,7 @@ def create_data(root):
         }
     )
     rows = []
+    impressions = []
     for day in range(30):
         for u in range(24):
             at = start + pd.Timedelta(days=day, hours=u % 12 + 1)
@@ -85,6 +87,12 @@ def create_data(root):
                     )
 
                 add("view", 0)
+                shown = [item, *rng.choice(pool[pool != item], 4, replace=False).tolist()]
+                impressions.append({
+                    "impression_id": f"I{len(impressions):08}", "user_id": f"U{u:05}", "session_id": session,
+                    "timestamp": t - pd.Timedelta(seconds=1), "source": "home", "context": "",
+                    "product_ids": [f"P{i:05}" for i in rng.permutation(shown)], "clicked_ids": [f"P{item:05}"],
+                })
                 if rng.random() < (0.65 if item % 3 == 0 else 0.08):
                     add("cart", 20)
                     add("purchase", 40)
@@ -95,11 +103,12 @@ def create_data(root):
     (out / "users_hidden.parquet").write_bytes(b"NOT MODEL INPUT")
     events = pd.DataFrame(rows)
     bounds = boundaries({"period": {"start_date": str(start.date()), "days": 30}})
-    parts = split_logs(events, pa.Table.from_pandas(events[["session_id", "timestamp"]]), bounds)
+    parts = split_logs(events, pa.Table.from_pandas(pd.DataFrame(impressions), preserve_index=False), bounds)
     splits = root / "splits"
     splits.mkdir()
     for name, part in parts.items():
         part["events"].to_parquet(splits / f"{name}_events.parquet", index=False)
+        pq.write_table(part["impressions"], splits / f"{name}_impressions.parquet")
     meta = summarize(parts, bounds, users)
     (splits / "meta.json").write_text(json.dumps(meta), encoding="utf-8")
     return meta
@@ -125,7 +134,7 @@ def smoke(root):
     )
     train_candidate(data, bundle, cfg)
     build_index(bundle)
-    train_ranking(bundle)
+    train_ranking(bundle, data)
     report = evaluate(bundle)
     os.environ["REC_MODEL_DIR"] = str(bundle.resolve())
     os.environ["PRELOAD_MODELS"] = "0"

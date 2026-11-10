@@ -1,4 +1,4 @@
-.PHONY: install catalog data split train index search-eval-set eval-search eval-style-search eval eval-rec bench up down test lint docker-train docker-eval docker-test
+.PHONY: install catalog data split train index search-eval-set eval-search eval-style-search index-tradeoff eval eval-rec bench up down test lint docker-train docker-eval docker-test
 
 install:        ## 로컬 개발 환경 설치
 	pip install -r requirements/dev.txt
@@ -24,15 +24,19 @@ eval-search:    ## 검색 평가 (CLIP vs BM25)
 eval-style-search: ## 스타일 사진 검색 평가 (상품 사진 쿼리에서 기존 이미지 검색과 비교)
 	python -m src.evaluation.eval_style_search
 
+index-tradeoff: ## FAISS 인덱스 비교 (flat / HNSW / IVF / IVF+PQ의 속도·Recall·크기·검색 품질)
+	python -m src.evaluation.index_tradeoff
+
 train:          ## Two-Tower → FAISS → DeepFM CVR → 세션 인코더 학습
 	python -m src.recommendation.candidate.train
 	python -m src.recommendation.candidate.build_index
 	python -m src.recommendation.ranking.train
 	python -m src.recommendation.session.train
 
-eval:           ## 오프라인 지표 산출
+eval:           ## 오프라인 지표 산출 (검색, 추천 단계별, 최종 추천 파이프라인)
 	python -m src.evaluation.eval_search
 	python -m src.evaluation.eval_recommend
+	python -m src.evaluation.eval_pipeline
 
 bench:          ## 응답시간 p95 측정 (warm-up 10 + 100회)
 	python -m src.evaluation.latency_bench --target search

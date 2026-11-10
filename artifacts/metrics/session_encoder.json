@@ -6,6 +6,8 @@
     "max_len": 10,
     "min_len": 2,
     "long_short_alpha": 0.6,
+    "live_history": true,
+    "blend_candidates": true,
     "temperature": 0.1,
     "epochs": 5,
     "lr": 0.001,
@@ -13,28 +15,28 @@
     "eval_k": 20,
     "n_candidates": 50,
     "interest_field": "category_l2",
-    "model_file": "session_encoder.pt",
+    "model_file": "session_encoder_v20261110b.pt",
     "seed": 42
   },
-  "train_examples": 344637,
-  "trained_items": 21964,
+  "train_examples": 357915,
+  "trained_items": 28780,
   "loss": [
-    9.887763757303091,
-    8.705934067256054,
-    8.595403047911965,
-    8.572008158027403,
-    8.558922368965291
+    10.056715442602634,
+    8.974831684475404,
+    8.861353338282157,
+    8.835228343467115,
+    8.819007882064309
   ],
   "valid": {
     "session_gru": {
-      "hit_rate@20": 0.05393660531697342,
-      "mrr@20": 0.013760063525520382,
-      "n_examples": 46944
+      "hit_rate@20": 0.028818623179385036,
+      "mrr@20": 0.006152942710518565,
+      "n_examples": 48198
     },
     "popularity": {
-      "hit_rate@20": 0.05223244717109748,
-      "mrr@20": 0.013383323551443213,
-      "n_examples": 46944
+      "hit_rate@20": 0.025810199593344123,
+      "mrr@20": 0.005733050094649447,
+      "n_examples": 48198
     }
   }
 }

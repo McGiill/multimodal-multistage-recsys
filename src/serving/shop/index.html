@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>패션 스토어 데모</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="shop.css">
+</head>
+<body>
+  <!-- 통합 서비스 화면: 취향조사 → 클릭 반영 추천 → 검색 (API 서버가 /shop/ 으로 제공, 동작은 shop.js) -->
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="logo" href="#/">패션 스토어<span class="logo-tag">DEMO</span></a>
+      <form class="searchbar" id="search-form" role="search">
+        <input id="q" type="search" autocomplete="off" aria-label="검색어"
+               placeholder="찾는 옷을 영어로 입력 (예: black strap top)">
+        <label class="icon-btn" title="사진으로 검색 (착용 사진·상품 사진)">
+          <input id="photo-input" type="file" accept="image/*" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l1.5-2h7L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
+          <span class="sr-only">사진으로 검색</span>
+        </label>
+        <button class="icon-btn" type="submit" title="검색">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
+          <span class="sr-only">검색</span>
+        </button>
+      </form>
+      <div class="controls">
+        <select id="audience" aria-label="고객층"></select>
+        <select id="member" aria-label="회원"></select>
+        <button id="new-visit" class="text-btn" type="button" title="이번 방문의 클릭을 비우고 처음부터 다시 시작">새 방문</button>
+      </div>
+    </div>
+  </header>
+
+  <main id="app" class="page" aria-live="polite"></main>
+
+  <footer class="footer" id="footer"></footer>
+  <div class="toast" id="toast" role="status" hidden></div>
+  <script src="shop.js"></script>
+</body>
+</html>

@@ -128,9 +128,10 @@ class Simulator:
         n_new = round(self.length * lists["home_new_share"])
         created = w.created_day[seg_items]
         fresh = seg_items[(created > visit.day - lists["new_days"]) & (created <= visit.day)][:n_new]
+        pool = pool[~np.isin(pool, fresh)]  # 신상품은 아래에서 따로 끼워 넣으므로 인기 풀에서 뺀다 (같은 상품 두 번 노출 방지)
         k = min(self.length - len(fresh), len(pool))
         weight = np.exp(lists["home_pop_power"] * w.popularity[pool])
-        picked = rng.choice(pool, size=k, replace=False, p=weight / weight.sum())
+        picked = rng.choice(pool, size=k, replace=False, p=weight / weight.sum()) if k else pool[:0]
         items = list(picked[np.argsort(-w.popularity[picked], kind="stable")])
         for j, item in enumerate(fresh):  # 신상품은 고르게 끼워 넣음
             items.insert(min(len(items), 2 + j * 5), item)
@@ -141,7 +142,10 @@ class Simulator:
         m = self.mean_sec[kind]
         return float(rng.lognormal(np.log(m) - 0.32, 0.8))
 
-    def _session_starts(self, signup_day: int, expected: float, rng: np.random.Generator) -> np.ndarray:
+    def _session_starts(self, signup_day: int, expected: float, rng: np.random.Generator,
+                        signup_sec: float = -np.inf) -> np.ndarray:
+        """방문 시작 시각(시뮬레이션 시작부터 초). 가입 당일에 가입 시각보다 이른 방문은
+        그날 가입 이후 구간으로 옮긴다 (가입 전 행동 방지, 난수는 더 쓰지 않음)."""
         active = np.arange(max(0, signup_day), self.days)
         n = rng.poisson(expected)
         if n == 0 or len(active) == 0:
@@ -149,7 +153,12 @@ class Simulator:
         p = self.day_w[active] / self.day_w[active].sum()
         days = rng.choice(active, size=n, p=p)
         hours = rng.choice(24, size=n, p=self.hour_p)
-        return np.sort(days * DAY + hours * 3600 + rng.uniform(0, 3600, size=n))
+        starts = days * DAY + hours * 3600 + rng.uniform(0, 3600, size=n)
+        early = starts < signup_sec
+        if early.any():
+            day0 = signup_day * DAY  # 가입 당일 0시 ~ 24시를 가입 시각 ~ 24시로 줄여서 옮김
+            starts[early] = signup_sec + (starts[early] - day0) * (day0 + DAY - signup_sec) / DAY
+        return np.sort(starts)
 
     # ------------------------------------------------------------------ 고객 한 명
     def simulate_user(self, pop: Population, i: int, log: Log, rng: np.random.Generator) -> None:
@@ -160,7 +169,8 @@ class Simulator:
         screen_p = np.array([persona.screens[s] for s in screens])
         prev_end = -np.inf
 
-        for number, planned in enumerate(self._session_starts(int(h["signup_day"]), float(h["expected_sessions"]), rng)):
+        starts = self._session_starts(int(h["signup_day"]), float(h["expected_sessions"]), rng, float(h["signup_sec"]))
+        for number, planned in enumerate(starts):
             t = max(planned, prev_end + self.gap_sec)
             day = int(t // DAY)
             if day >= self.days:

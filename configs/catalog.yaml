@@ -10,8 +10,11 @@ price:                     # 상품 가격 = 최빈 거래가 × denominator (�
 
 created_at:                # 상품 등록일 (H&M에 없음 → 임의 생성, 같은 디자인(product_code)은 같은 날)
   reference_date: "2026-03-31"            # "오늘" = 시뮬레이션 로그 마지막 날 (simulator.yaml period와 맞출 것)
-  new_ratio: 0.05                         # 브랜드마다 상품의 5%를 신규 상품으로
-  new_days: 7                             # 신규 = 기준일 포함 최근 7일 안에 등록
+  new_ratio: 0.10                         # 브랜드마다 상품의 10%를 로그 기간(new_range) 중에 등록
+  new_range: ["2026-01-01", "2026-03-31"] # 신상품 등록일: 로그 기간 전체에 고르게 (2026-11-10)
+                                          # 이전: 5%를 마지막 7일에 몰아서 → train·valid에는 신상품이 없고 test에만 있어서
+                                          # valid로 고른 모델이 test의 신상품 조회(18.5%)를 거의 못 맞힘 (Two-Tower Recall 0.03)
+  new_days: 7                             # 신규 = 등록 7일 이내 (Stage 3 신규 상품 칸, 요약 출력 기준)
   old_range: ["2025-01-01", "2025-12-31"] # 나머지는 로그 시작(2026-01-01) 전에 등록
 
 # 가상 브랜드: H&M 매장 코너(index_group_name → section_name) 단위로 묶는다.

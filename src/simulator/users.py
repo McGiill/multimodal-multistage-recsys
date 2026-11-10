@@ -79,9 +79,10 @@ def generate_users(cfg: dict[str, Any], personas: dict[str, PersonaParams], worl
     is_new = rng.random(n) < ucfg["new_user_ratio"]
     before = int((start - np.datetime64(ucfg["signup_from"], "D")).astype(int))
     signup_day = np.where(is_new, rng.integers(0, days, size=n), -rng.integers(1, before + 1, size=n))
-    signup_at = (start + signup_day.astype("timedelta64[D]")).astype("datetime64[s]") + rng.integers(
-        0, 86400, size=n
-    ).astype("timedelta64[s]")
+    signup_offset = rng.integers(0, 86400, size=n)  # 가입한 날의 몇 초에 가입했는지
+    signup_at = (start + signup_day.astype("timedelta64[D]")).astype("datetime64[s]") + signup_offset.astype(
+        "timedelta64[s]"
+    )
     active_frac = (days - np.clip(signup_day, 0, None)) / days
 
     sigma = ucfg["activity_sigma"]
@@ -133,6 +134,7 @@ def generate_users(cfg: dict[str, Any], personas: dict[str, PersonaParams], worl
             "activity": activity.round(3),
             "expected_sessions": expected.round(2),
             "signup_day": signup_day,
+            "signup_sec": signup_day * 86400 + signup_offset,  # 시뮬레이션 시작부터 가입까지 초 (행동 생성용)
             "seed": seed,
         }
     )

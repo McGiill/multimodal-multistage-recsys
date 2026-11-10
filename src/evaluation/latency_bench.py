@@ -2,6 +2,7 @@
 
     python -m src.evaluation.latency_bench --target search
     python -m src.evaluation.latency_bench --target search --model patrickjohncyh/fashion-clip
+    python -m src.evaluation.latency_bench --target search --model patrickjohncyh/fashion-clip --out artifacts/metrics/latency_search_patrickjohncyh__fashion-clip_docker.json  # Docker 4코어 측정
 
 - search: /api/search 를 앱 안에서 직접 호출(TestClient)해 text / image / hybrid 각각 측정
           → API 파싱·직렬화까지 포함한 서버 처리 시간. 기준 p95 < 200ms
@@ -17,11 +18,13 @@ from __future__ import annotations
 import argparse
 import base64
 import json
+import os
 import platform
 import subprocess
 import time
 from collections.abc import Callable
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -49,13 +52,23 @@ def measure(call: Callable[[int], Any], warmup: int = 10, n: int = 100) -> dict[
     }
 
 
+def cpu_limit() -> float | None:
+    """컨테이너 CPU 제한 (cgroup v2 cpu.max, 예: docker --cpus 4 → 4.0). 제한이 없거나 컨테이너가 아니면 None."""
+    try:
+        quota, period = Path("/sys/fs/cgroup/cpu.max").read_text().split()
+    except (OSError, ValueError):
+        return None
+    return None if quota == "max" else round(int(quota) / int(period), 2)
+
+
 def machine_info() -> dict[str, Any]:
     import torch
 
     cpu = platform.processor()
     if platform.system() == "Darwin":
         cpu = subprocess.run(["sysctl", "-n", "machdep.cpu.brand_string"], capture_output=True, text=True, check=False).stdout.strip()
-    return {"platform": platform.platform(), "cpu": cpu, "torch_threads": torch.get_num_threads()}
+    return {"platform": platform.platform(), "cpu": cpu, "cpu_count": os.cpu_count(), "cpu_limit": cpu_limit(),
+            "torch_threads": torch.get_num_threads()}
 
 
 def bench_search(model: str | None = None) -> dict[str, Any]:
@@ -119,6 +132,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--target", choices=["search", "feature"], default="search")
     parser.add_argument("--model", default=None, help="검색 모델 (기본: configs/search.yaml)")
+    parser.add_argument("--out", default=None, help="저장 경로 (기본: artifacts/metrics/latency_<target>[_<모델>].json)")
     args = parser.parse_args()
 
     result = {"target": args.target, "measured_at": datetime.now().isoformat(timespec="seconds"), **machine_info()}
@@ -128,7 +142,7 @@ def main() -> None:
         result |= bench_feature()
 
     suffix = f"_{model_slug(result['model_name'])}" if args.model and args.target == "search" else ""
-    out = ROOT / load_config("search")["paths"]["metrics_dir"] / f"latency_{args.target}{suffix}.json"
+    out = ROOT / (args.out or Path(load_config("search")["paths"]["metrics_dir"]) / f"latency_{args.target}{suffix}.json")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
 

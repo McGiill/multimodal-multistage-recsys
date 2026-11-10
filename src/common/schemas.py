@@ -139,6 +139,15 @@ class ProductInfo(BaseModel):
     price: float                         # 달러
 
 
+class SimilarProductsResponse(BaseModel):
+    """GET /api/products/{product_id}/similar — 상품 상세의 "비슷한 상품" (사진 유사도, 같은 디자인 제외)."""
+
+    product_id: str
+    results: list[StyleSearchResultItem]
+    latency_ms: float
+    total_count: int                     # 고객층 제한 후 후보 수
+
+
 class StyleSearchGroup(BaseModel):
     slot: str                            # 부위: outer / top / dress / bottom / shoes / ... (옷을 못 찾았으면 "all")
     slot_name: str                       # 화면 표시용 (아우터, 상의, ...)

@@ -30,10 +30,13 @@ class Retriever:
         self.store = store
 
     @torch.inference_mode()
-    def retrieve(self, user_id, n=300, at=None):
+    def retrieve(self, user_id, n=300, at=None, recent=None):
+        """recent: 저장된 이력 뒤에 붙일 최근 조회 상품 번호 (FeatureStore.append_recent). 반환 state에도 반영된다."""
         if at is None:
             raise ValueError("Explicit prediction time required")
         h, l, p = self.store.state(user_id, at)
+        if recent is not None and len(recent):
+            h, l = self.store.append_recent(h, l, recent)
         q = self.model.user(
             torch.from_numpy(p[None]), torch.from_numpy(h[None]), torch.tensor([l])
         ).numpy()
