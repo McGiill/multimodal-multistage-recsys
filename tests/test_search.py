@@ -193,3 +193,36 @@ def test_model_slug_and_overrides() -> None:
     new = with_overrides(cfg, model="b", text_image_weight=0.7)
     assert new["clip"]["model_name"] == "b" and new["text_query"]["image_weight"] == 0.7
     assert cfg["clip"]["model_name"] == "a"  # 원본 설정은 그대로
+
+
+def test_relevance_tag_keeps_old_result_names() -> None:
+    from src.evaluation.eval_search import relevance_tag
+
+    assert relevance_tag({"eval": {}}) == ""  # 기준이 없으면 기존 기준(design)
+    assert relevance_tag({"eval": {"relevance": "design"}}) == ""
+    assert relevance_tag({"eval": {"relevance": "color_family"}}) == "_color_family"
+
+
+def test_index_tradeoff_overlap() -> None:
+    from src.evaluation.index_tradeoff import overlap
+
+    found = np.array([[1, 2, 3], [4, 5, 6]])
+    truth = np.array([[1, 2, 9], [4, 5, 6]])
+    assert overlap(found, truth) == pytest.approx((2 / 3 + 1) / 2)
+    assert overlap(found, truth[:, :1]) == 1.0  # 정답 1위는 둘 다 후보 안에 있음
+
+
+def test_similar_products_skip_same_design(searcher) -> None:
+    result = searcher.similar_products("hm_0000000000", top_k=3)
+    assert "hm_0000000000" not in result.product_ids
+    assert "hm_0000000001" not in result.product_ids  # 같은 디자인(product_code 1)의 다른 색
+    codes = [searcher.product_codes[r] for r in result.rows]
+    assert len(codes) == len(set(codes)) and len(result.items) == len(result.product_ids) <= 3
+    with pytest.raises(KeyError):
+        searcher.similar_products("hm_9999999999", top_k=3)
+
+
+def test_search_restricted_to_audience(searcher) -> None:
+    q = searcher._image_emb_for_test[4]
+    assert searcher.search(None, q, top_k=3, l1=["Menswear"]).product_ids == []  # 가짜 카탈로그는 전부 Ladieswear
+    assert searcher.search(None, q, top_k=3, l1=["Ladieswear"]).product_ids == searcher.search(None, q, top_k=3).product_ids

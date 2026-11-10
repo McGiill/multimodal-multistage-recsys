@@ -9,7 +9,8 @@
 - text / image / hybrid / all : 설정 그대로의 검색기 (CLIP + BM25 융합 + 색·소분류 가점)
 - clip_only_*                 : BM25 융합·색·소분류 가점을 끈 CLIP만 (개선 효과 비교용)
 - bm25_text                   : 베이스라인
-결과: artifacts/metrics/search_<모델>_<인덱스>.json + 콘솔 표 (docs/report_search.md 에 옮겨 적기)
+결과: artifacts/metrics/search_<모델>_<인덱스>_<split>[_<정답 기준>].json + 콘솔 표 (docs/report_search.md 에 옮겨 적기)
+      정답 기준(eval.relevance)이 기존 기준(design)이 아니면 파일 이름 끝에 붙여서 기존 결과를 덮어쓰지 않는다.
 """
 
 from __future__ import annotations
@@ -28,6 +29,13 @@ from src.evaluation.metrics import hit_rate_at_k, mrr, ndcg_at_k
 from src.search.bm25 import BM25Searcher
 from src.search.catalog import load_catalog, model_slug, with_overrides
 from src.search.searcher import Searcher
+
+
+def relevance_tag(cfg: dict[str, Any]) -> str:
+    """결과 파일 이름 끝에 붙일 정답 기준 (eval.relevance). 기존 기준(design)이면 빈 문자열 → 기존 파일 이름 유지.
+    eval_search / tune_search / eval_style_search 가 같이 쓴다 (기준이 다른 결과끼리 덮어쓰지 않게)."""
+    relevance = cfg["eval"].get("relevance", "design")
+    return "" if relevance == "design" else f"_{relevance}"
 
 
 def score(ranked: list[list[str]], eval_df: pd.DataFrame, k: int, mrr_min_grade: float) -> dict[str, float]:
@@ -108,18 +116,22 @@ def main() -> None:
         ranked = [bm25.search(q, k)[0] for q in frames["text"]["query_text"]]
         results["bm25_text"] = score(ranked, frames["text"], k, ev["mrr_min_grade"])
 
+    relevance = ev.get("relevance", "design")
     report = {
         "model_name": cfg["clip"]["model_name"],
         "index": cfg["index"],
         "weights": {"text_query": cfg["text_query"], "image_query": cfg.get("image_query", {}), "hybrid": cfg["hybrid"]},
         "k": k,
         "split": args.split,
+        "relevance": relevance,
+        "eval_set": cfg["paths"]["eval_set"],
         "mrr_min_grade": ev["mrr_min_grade"],
         "seed": cfg["seed"],
         "evaluated_at": datetime.now().isoformat(timespec="seconds"),
         "results": results,
     }
-    out = ROOT / cfg["paths"]["metrics_dir"] / f"search_{model_slug(cfg['clip']['model_name'])}_{cfg['index']['type']}_{args.split}.json"
+    name = f"search_{model_slug(cfg['clip']['model_name'])}_{cfg['index']['type']}_{args.split}{relevance_tag(cfg)}.json"
+    out = ROOT / cfg["paths"]["metrics_dir"] / name
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 

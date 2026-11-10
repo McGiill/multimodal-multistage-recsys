@@ -20,6 +20,7 @@ from src.recommendation.training import (
     build_index,
     make_index,
     predict,
+    ranking_inputs,
     train_candidate,
     train_ranking,
 )
@@ -46,7 +47,7 @@ def trained(tmp_path_factory):
     bundle = root / "bundle"
     train_candidate(data, bundle, cfg)
     build_index(bundle)
-    train_ranking(bundle)
+    train_ranking(bundle, data)
     return data, bundle, RecommendationModels(bundle)
 
 
@@ -117,15 +118,13 @@ def test_maturity_and_feature_parity(trained):
     np.testing.assert_array_equal(h, data["history"][i])
     np.testing.assert_allclose(p, data["profile"][i])
     ids, _, state = models.retriever.retrieve(data["user"][i], 300, at)
-    s, d = rank_features(
-        models.store,
-        ids,
-        np.tile(h, (len(ids), 1)),
-        np.tile(p, (len(ids), 1)),
-        np.full(len(ids), at),
-    )
+    # 학습 경로(ranking_inputs: 배치로 사용자 벡터 계산)와 서빙 경로(models.score)가 같은 특징·점수를 내야 한다
+    n = len(ids)
+    rows = {"user": np.full(n, data["user"][i]), "time": np.full(n, at), "target": ids,
+            "history": np.tile(h, (n, 1)), "profile": np.tile(p, (n, 1)), "length": np.full(n, length)}
+    s, d = ranking_inputs(models.cfg, models.store, models.tower, models.item_vectors, rows, np.arange(n))
     np.testing.assert_allclose(
-        predict(models.ranker, s, d), models.score(ids, state, at), atol=1e-7
+        predict(models.ranker, s, d), models.score(ids, state, at), atol=1e-6
     )
     assert not data["mature"][data["time"] >= stamp("2026-01-30T00:00:00Z")].any()
 
@@ -169,7 +168,7 @@ def test_future_signup_unknown_and_price_used(trained):
 
 
 def test_api_real_models_and_time_validation(trained, monkeypatch):
-    _, bundle, _ = trained
+    _, bundle, models = trained
     monkeypatch.setenv("REC_MODEL_DIR", str(bundle))
     monkeypatch.setenv("PRELOAD_MODELS", "0")
     from src.serving.main import app
@@ -183,10 +182,11 @@ def test_api_real_models_and_time_validation(trained, monkeypatch):
         assert all(int(r["product_id"][1:]) < 550 for r in body["recommendations"])
         recs = body["recommendations"]
         assert all(0 <= r["score"] <= 1 for r in recs)
-        # Stage 3: 점수 순서를 바꿀 수 있지만 값은 Stage 2 CVR 그대로
-        assert {r["reason"] for r in recs} <= {"cvr", "new_item", "mab_exploration"}
+        # Stage 3: 점수 순서를 바꿀 수 있지만 값은 Stage 2 점수 그대로
+        stage2 = models.objective  # ranking.objective (ctr: 노출 기반, 명세)
+        assert {r["reason"] for r in recs} <= {stage2, "new_item", "mab_exploration"}
         assert any(r["reason"] == "mab_exploration" and r["is_exploration"] for r in recs)
-        assert all(r["is_exploration"] == (r["reason"] != "cvr") for r in recs)
+        assert all(r["is_exploration"] == (r["reason"] != stage2) for r in recs)
         assert len({r["product_id"] for r in recs}) == len(recs)
         assert body["pipeline_latency"]["reranking_ms"] > 0
         assert (
@@ -406,3 +406,83 @@ def test_valid_history_uses_train_only(trained):
         & (store.events["_time"] < stamp("2026-01-25T00:00:00Z"))
     ]["_pid"].to_numpy()[-store.history_len:]
     np.testing.assert_array_equal(h2[:len(prior)], prior)
+
+
+def test_append_recent_extends_frozen_history():
+    """최근 조회(session.live_history)는 저장된 이력 뒤에 붙고, 길이를 넘으면 오래된 것부터 버린다."""
+    from src.recommendation.ranking.features import FeatureStore
+
+    h, length = FeatureStore.append_recent(np.zeros(5, np.int64), 1, [7, 0, 8])  # 0(모르는 상품)은 무시
+    assert h.tolist() == [7, 8, 0, 0, 0] and length == 2
+    h, length = FeatureStore.append_recent(np.array([1, 2, 3, 0, 0]), 3, [4, 5, 6])
+    assert h.tolist() == [2, 3, 4, 5, 6] and length == 5
+    same = np.array([1, 2, 0, 0, 0])
+    assert FeatureStore.append_recent(same, 2, [])[0] is same
+
+
+def test_retrieve_with_recent_changes_user_state(trained):
+    _, _, models = trained
+    at = stamp("2026-01-29T00:00:00Z")
+    _, _, (h0, _, _) = models.retriever.retrieve("unknown", 5, at)
+    _, _, (h1, l1, _) = models.retriever.retrieve("unknown", 5, at, recent=[3, 4])
+    assert not h0.any() and h1[:2].tolist() == [3, 4] and l1 == 2
+
+
+def test_ranking_examples_are_shown_items_with_purchase_labels(trained):
+    """명세 평가 프로토콜: Ranking 음성 = 같은 노출 목록에서 보여줬지만 클릭하지 않은 상품.
+    목표(ctcvr) = 노출 후 구매: 양성은 그 목록에서 눌렀고 나중에 산 상품, 음성은 안 누른 상품 + 눌렀지만 안 산 상품."""
+    data_dir, bundle, models = trained
+    assert models.objective == "ctcvr" and (bundle / "ranking_ctcvr.pt").exists()
+    ex = dict(np.load(bundle / "ranking_examples_ctcvr.npz", allow_pickle=False))
+    imps = pd.concat([pd.read_parquet(data_dir / "splits" / f"{n}_impressions.parquet") for n in ("train", "valid", "test")])
+    shown = {(u, p) for u, ids in zip(imps.user_id, imps.product_ids) for p in ids}
+    clicked = {(u, p) for u, ids in zip(imps.user_id, imps.clicked_ids) for p in ids}
+    items = models.store.item_ids
+    pairs = [(u, items[t - 1]) for u, t in zip(ex["user"], ex["target"])]
+    assert all(pr in shown for pr in pairs)  # 모든 예시는 실제로 보여준 상품
+    assert all(pairs[i] in clicked for i in np.flatnonzero(ex["clicked"]))
+    assert int((~ex["clicked"]).sum()) == 4 * int(ex["clicked"].sum())  # 클릭 1개당 안 누른 상품 4개 (smoke: 5개 중 1개 클릭)
+
+    ev = pd.concat([pd.read_parquet(data_dir / "splits" / f"{n}_events.parquet") for n in ("train", "valid", "test")])
+    bought = set(zip(ev.loc[ev.event_type == "purchase", "user_id"], ev.loc[ev.event_type == "purchase", "product_id"]))
+    positive = np.flatnonzero(ex["label"] == 1)
+    assert len(positive) and ex["clicked"][positive].all()  # 산 상품은 그 목록에서 누른 상품
+    assert all(pairs[i] in bought for i in positive)
+    assert not ex["label"][~ex["clicked"]].any()  # 안 누른 상품은 전부 음성
+    # 모델 묶음의 이벤트에는 test가 없어도(frozen_split) test 노출의 구매 라벨은 분할 파일로 만든다
+    assert ex["label"][ex["split"] == 2].any()
+
+
+def test_rank_features_v2_adds_cross_and_item_signals(trained):
+    _, _, models = trained
+    store = models.store
+    at = stamp("2026-01-29T00:00:00Z")
+    h, length, p = store.state("U00001", at)
+    ids = np.arange(1, 21)
+    s1, d1 = rank_features(store, ids, np.tile(h, (20, 1)), np.tile(p, (20, 1)), np.full(20, at))
+    affinity = np.linspace(-1, 1, 20)
+    s2, d2 = rank_features(store, ids, np.tile(h, (20, 1)), np.tile(p, (20, 1)), np.full(20, at), 2, affinity)
+    assert (s1 == s2).all() and d2.shape[1] == d1.shape[1] + 8
+    extra = d2[:, d1.shape[1]:]
+    assert np.allclose(extra[:, 4], affinity)  # Two-Tower 취향 점수 그대로
+    assert ((extra >= -1) & (extra <= 1)).all()
+    with pytest.raises(ValueError):
+        rank_features(store, ids, np.tile(h, (20, 1)), np.tile(p, (20, 1)), np.full(20, at), 2)
+    assert len(models.score(ids, (h, length, p), at)) == 20  # 서빙도 같은 특징으로 점수
+
+
+def test_popularity_uses_only_days_before_prediction():
+    """최근 인기도는 예측 시각의 전날까지 기록만 센다 (같은 날·미래 기록이 새지 않음)."""
+    from types import SimpleNamespace
+
+    from src.recommendation.ranking.features import FeatureStore
+
+    day = 86400.0
+    events = pd.DataFrame({"event_type": ["view"] * 4, "_pid": [1, 1, 1, 2],
+                           "_time": [10 * day + 5, 11 * day + 5, 12 * day + 5, 12 * day + 9]})
+    store = SimpleNamespace(events=events, item_ids=["A", "B"], metadata={})
+    pop = FeatureStore.popularity.__get__(store)
+    store.frozen_time = FeatureStore.frozen_time.__get__(store)
+    got = pop(np.array([1, 1, 2]), np.array([12 * day + 100, 13 * day, 12 * day + 100]))
+    expected = np.minimum(np.log1p([2, 3, 0]) / 8, 1)  # 12일 낮: 10·11일 2건 / 13일 0시: 3건 / B는 12일 기록뿐
+    assert np.allclose(got, expected)

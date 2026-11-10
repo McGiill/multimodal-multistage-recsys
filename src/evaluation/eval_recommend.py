@@ -6,10 +6,11 @@ from pathlib import Path
 import numpy as np
 
 from src.evaluation.metrics import auc
-from src.recommendation.ranking.features import rank_features
 from src.recommendation.training import (
     arguments,
     predict,
+    ranking_examples,
+    ranking_inputs,
     retrieval_metric,
 )
 from src.serving.model_loader import RecommendationModels
@@ -27,20 +28,19 @@ def evaluate(folder):
     retrieval = retrieval_metric(
         models.tower, models.index, store, data, ix, cfg["candidate"]["n_candidates"]
     )
-    ci = np.flatnonzero((data["split"] == 2) & data["mature"])
-    if len(np.unique(data["label"][ci])) < 2:
-        raise ValueError("CVR test requires both labels")
-    s, d = rank_features(
-        store,
-        data["target"][ci],
-        data["history"][ci],
-        data["profile"][ci],
-        data["time"][ci],
-    )
+    # Stage 2 (ranking.objective): ctcvr = test 노출 목록에서 노출 후 구매(1) vs 나머지(0),
+    #                              ctr = 클릭(1) vs 보여줬지만 안 누름(0), cvr = test 조회 후 24시간 구매
+    objective = models.objective
+    rdata = ranking_examples(folder, store, cfg)
+    ci = np.flatnonzero((rdata["split"] == 2) & rdata["mature"])
+    if len(np.unique(rdata["label"][ci])) < 2:
+        raise ValueError(f"{objective} test requires both labels")
+    s, d = ranking_inputs(cfg, store, models.tower, models.item_vectors, rdata, ci)
     prob = predict(models.ranker, s, d)
-    y = data["label"][ci]
+    y = rdata["label"][ci]
     clipped = np.clip(prob, 1e-7, 1 - 1e-7)
-    cvr = {
+    ranking = {
+        "objective": objective,
         "auc": auc(y, prob),
         "rows": len(ci),
         "positives": int(y.sum()),
@@ -68,7 +68,7 @@ def evaluate(folder):
             counts.append(len(ids))
     report = {
         "retrieval": retrieval,
-        "cvr": cvr,
+        "ranking": ranking,
         "latency": {
             "candidate_p95_ms": float(np.percentile(lat, 95)),
             "candidate_p50_ms": float(np.percentile(lat, 50)),
@@ -85,18 +85,27 @@ def evaluate(folder):
         "history_events_saved": len(store.events),
         "data_audit": store.metadata.get("data_audit", {}),
         "history_policy": store.metadata.get("history_policy"),
-        "label_definition": "Purchase within 24h attributed only to latest strictly earlier view of same user/item, within the same split; fully observed windows only",
+        "label_definition": {
+            "ctcvr": "Purchase within the window after being shown and clicked in that impression (1) vs shown-but-not-clicked "
+                     "or clicked-but-not-purchased (0); negatives per click sampled from the same impression; "
+                     "impressions without clicks skipped; fully observed windows only",
+            "ctr": "Click (1) vs shown-but-not-clicked (0) in the same impression list; negatives per click sampled; "
+                   "impressions without clicks skipped",
+            "cvr": "Purchase within 24h attributed only to latest strictly earlier view of same user/item, within the same split; "
+                   "fully observed windows only",
+        }[objective],
+        "ranking_features": cfg["ranking"].get("features", 1),
         "split_examples": {
             name: {
                 "retrieval_views": int((data["split"] == j).sum()),
-                "cvr_rows": int(((data["split"] == j) & data["mature"]).sum()),
-                "cvr_positives": int(data["label"][(data["split"] == j) & data["mature"]].sum()),
+                "ranking_rows": int(((rdata["split"] == j) & rdata["mature"]).sum()),
+                "ranking_positives": int(rdata["label"][(rdata["split"] == j) & rdata["mature"]].sum()),
             } for j, name in enumerate(["train", "valid", "test"])
         },
         "boundary_view_exclusions": int((data["split"] == -1).sum()),
         "thresholds": {
             "recall": retrieval["recall_at_300"] >= 0.3,
-            "cvr_auc": cvr["auc"] >= 0.7,
+            "ranking_auc": ranking["auc"] >= 0.7,
             "candidate_latency": bool(np.percentile(lat, 95) < 100),
             "candidate_count": min(counts) >= 300,
         },
@@ -105,9 +114,10 @@ def evaluate(folder):
             "Observed product price is consumed as supplied, not inferred currency.",
             "Results describe the supplied simulator dataset, not real shoppers or an online experiment.",
             "Frozen holdout history: valid uses train; test uses train+valid before their nominal boundaries.",
-            "CVR AUC uses logged views, not unviewed FAISS candidates; exposure-selection bias remains.",
+            "Ranking AUC uses logged impressions/views, not unshown FAISS candidates; exposure-selection bias remains.",
             "Supplied static catalog cannot validate historical price changes.",
-            "Next-view retrieval target; CVR is conditional on a view.",
+            "Next-view retrieval target; " + {"ctcvr": "CTCVR is purchase given being shown.", "ctr": "CTR is conditional on being shown.",
+                                              "cvr": "CVR is conditional on a view."}[objective],
         ],
     }
     (folder / "metrics.json").write_text(json.dumps(report, indent=2), encoding="utf-8")

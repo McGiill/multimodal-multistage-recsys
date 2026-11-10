@@ -91,7 +91,7 @@ def main():
         train_candidate(args.data_dir, out, cfg)
         (out / "source_checksums.json").write_text(json.dumps(records, indent=2), encoding="utf-8")
         build_index(out)
-        train_ranking(out)
+        train_ranking(out, args.data_dir)
     if args.action in ["evaluate", "all"]:
         from src.evaluation.eval_recommend import evaluate
 

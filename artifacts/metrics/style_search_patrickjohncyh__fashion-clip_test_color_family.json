@@ -1,0 +1,45 @@
+{
+  "model_name": "patrickjohncyh/fashion-clip",
+  "detector": {
+    "model_name": "valentinafeve/yolos-fashionpedia",
+    "device": "cpu",
+    "shortest_edge": 512,
+    "longest_edge": 1333,
+    "threshold": 0.5,
+    "min_area": 0.003,
+    "nms_iou": 0.6,
+    "crop_margin": 0.08,
+    "requested_threshold": 0.1
+  },
+  "split": "test",
+  "relevance": "color_family",
+  "eval_set": "data/processed/search_eval_v2.parquet",
+  "k": 10,
+  "n_queries": 507,
+  "person_photo_share": 0.0,
+  "forced_detect": {
+    "detected_share": 0.7041,
+    "slot_accuracy": 0.7367
+  },
+  "evaluated_at": "2026-11-10T02:56:36",
+  "results": {
+    "whole": {
+      "n_queries": 507,
+      "mrr": 0.7427,
+      "ndcg@10": 0.5675,
+      "hit_rate@10": 0.8817
+    },
+    "style_search": {
+      "n_queries": 507,
+      "mrr": 0.7427,
+      "ndcg@10": 0.5675,
+      "hit_rate@10": 0.8817
+    },
+    "forced_detect": {
+      "n_queries": 507,
+      "mrr": 0.5739,
+      "ndcg@10": 0.3681,
+      "hit_rate@10": 0.7298
+    }
+  }
+}

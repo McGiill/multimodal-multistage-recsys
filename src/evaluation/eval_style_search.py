@@ -3,7 +3,8 @@
     python -m src.evaluation.eval_style_search
     python -m src.evaluation.eval_style_search --model patrickjohncyh/fashion-clip
 
-지금 쓸 수 있는 정답은 검색 평가셋의 이미지 쿼리(카탈로그 밖 H&M 사진, 같은 디자인 = 관련도 2)다.
+지금 쓸 수 있는 정답은 검색 평가셋의 이미지 쿼리(카탈로그 밖 H&M 사진, 관련도는 eval.relevance 기준:
+src/evaluation/build_search_eval.py)다.
 H&M 사진은 사람 없이 옷만 찍은 상품 사진이라, 사용자가 쇼핑몰 캡처를 올린 경우에 해당한다.
 사람이 입은 스타일 사진에서의 검색 정확도는 착용 사진 ↔ 상품 사진 쌍 데이터(DeepFashion2, Dress Code 등)로 따로 재야 한다.
 
@@ -13,7 +14,8 @@ H&M 사진은 사람 없이 옷만 찍은 상품 사진이라, 사용자가 쇼�
 - forced_detect  : (참고) 상품 사진에도 옷 검출을 그대로 쓰면: 가장 큰 박스를 잘라 그 부위 안에서 검색
                    → 검출 모델이 착용 사진으로 학습돼 상품 사진의 종류를 자주 틀려서, 사진 종류 판단이 필요한 이유
 
-결과: artifacts/metrics/style_search_<모델>_<split>.json
+결과: artifacts/metrics/style_search_<모델>_<split>[_<정답 기준>].json
+      (정답 기준이 기존 기준(design)이 아니면 파일 이름 끝에 붙여서 기존 결과를 덮어쓰지 않는다)
 """
 
 from __future__ import annotations
@@ -26,7 +28,7 @@ from typing import Any
 import pandas as pd
 
 from src.common.config import ROOT, load_config
-from src.evaluation.eval_search import score
+from src.evaluation.eval_search import relevance_tag, score
 from src.search.catalog import model_slug, with_overrides
 from src.search.detector import FashionDetector, box_area, crop
 from src.search.encoder import load_image
@@ -91,6 +93,8 @@ def main() -> None:
         "model_name": cfg["clip"]["model_name"],
         "detector": style_cfg["detector"],
         "split": args.split,
+        "relevance": cfg["eval"].get("relevance", "design"),
+        "eval_set": cfg["paths"]["eval_set"],
         "k": k,
         "n_queries": len(df),
         "person_photo_share": round(sum(person) / len(df), 4),  # 상품 사진인데 스타일 사진으로 잘못 본 비율
@@ -101,7 +105,8 @@ def main() -> None:
         "evaluated_at": datetime.now().isoformat(timespec="seconds"),
         "results": results,
     }
-    out = ROOT / cfg["paths"]["metrics_dir"] / f"style_search_{model_slug(cfg['clip']['model_name'])}_{args.split}.json"
+    name = f"style_search_{model_slug(cfg['clip']['model_name'])}_{args.split}{relevance_tag(cfg)}.json"
+    out = ROOT / cfg["paths"]["metrics_dir"] / name
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 

@@ -3,6 +3,7 @@
 1. 명세서 기준: 고객 1만 명 이상, 행동 로그 100만 건 이상, 이벤트 4종, 페르소나 6종
 2. 페르소나별 차이: 목록 클릭률, 전환율, 평균 구매가, 선호 카테고리 비율, 브랜드 집중도, 상대 가격, 신상품 비율
    + Retailrocket 목표(페르소나에 대응한 칸) vs 시뮬레이터 결과
+4. 데이터 정합성 (항상 0이어야 함): 가입 전 행동, 같은 상품이 두 번 들어간 노출 목록
 3. 학습 가능성 점검: 공식 분할(src/evaluation/split.py, 방문 단위 8:1:1)의 test 기간 HitRate@50을 간단한 기준 모델로 계산
    (전체 인기순 / 고객층 인기순 / 자주 본 카테고리 인기순 / 최근 본 상품과 함께 본 상품)
    개인화 기준 모델이 전체 인기순보다 높으면 추천 모델이 배울 개인화 신호가 있다는 뜻
@@ -137,17 +138,32 @@ def _rr_fit(hidden: pd.DataFrame, events: pd.DataFrame, rr_targets: dict[str, An
     return rows
 
 
+def integrity(users: pd.DataFrame, events: pd.DataFrame, impressions: pd.DataFrame) -> dict[str, int]:
+    """생성 규칙상 0이어야 하는 오류 수: 가입 시각보다 이른 행동, 한 노출 목록 안의 중복 상품."""
+    signup = events["user_id"].map(users.set_index("user_id")["signup_at"])
+    before = events["timestamp"] < signup
+    dup = impressions["product_ids"].map(lambda ids: len(ids) != len(set(ids)))
+    return {
+        "events_before_signup": int(before.sum()),
+        "users_with_events_before_signup": int(events.loc[before, "user_id"].nunique()),
+        "impressions_with_duplicate_products": int(dup.sum()),
+    }
+
+
 def build_report(cfg: dict[str, Any], catalog: pd.DataFrame, users: pd.DataFrame, hidden: pd.DataFrame,
                  events: pd.DataFrame, impressions: pd.DataFrame,
                  rr_targets: dict[str, Any] | None = None) -> dict[str, Any]:
     by_type = events["event_type"].value_counts().to_dict()
     per_user = events.groupby("user_id").size().reindex(users["user_id"], fill_value=0)
     viewed = events.loc[events["event_type"] == "view", "product_id"].nunique()
+    checks = integrity(users, events, impressions)
     spec = {
         "users >= 10,000": len(users) >= 10_000,
         f"events >= {cfg['scale']['min_events']:,}": len(events) >= cfg["scale"]["min_events"],
         "event types = search/view/cart/purchase": set(by_type) == {"search", "view", "cart", "purchase"},
         "personas = 6": hidden["persona"].nunique() == 6,
+        "no events before signup": checks["events_before_signup"] == 0,
+        "no duplicate products in an impression": checks["impressions_with_duplicate_products"] == 0,
     }
     return {
         "totals": {
@@ -161,6 +177,7 @@ def build_report(cfg: dict[str, Any], catalog: pd.DataFrame, users: pd.DataFrame
             "period": f"{events['timestamp'].min()} ~ {events['timestamp'].max()}",
         },
         "spec": spec,
+        "integrity": checks,
         "personas": _persona_table(cfg, catalog, hidden, events, impressions).reset_index().to_dict("records"),
         "retailrocket_fit": _rr_fit(hidden, events, rr_targets) if rr_targets else [],
         "learnability": _hit_rate(cfg, catalog, events),

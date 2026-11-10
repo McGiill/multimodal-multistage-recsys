@@ -36,7 +36,7 @@ from src.recommendation.reranking.mab import ExplorationPicker
 from src.recommendation.reranking.popularity import PopularityLists
 from src.recommendation.reranking.reranker import Reranker, RerankConfig
 
-STAGE2_REASON = "cvr"
+STAGE2_REASON = "cvr"  # 기본값. 서빙은 모델 묶음의 ranking.objective (ctr / cvr)를 쓴다 (get_rerank_service)
 POPULAR_REASON = "popular"
 TRENDING_REASON = "trending"
 
@@ -74,8 +74,10 @@ class RerankService:
         explorer: ExplorationPicker | None = None,
         popularity: PopularityLists | None = None,
         history_cutoffs: Sequence[float] | None = None,
+        stage2_reason: str = STAGE2_REASON,
     ) -> None:
         self.item_ids = list(item_ids)
+        self.stage2_reason = stage2_reason
         self.popularity = popularity
         self.history_cutoffs = tuple(history_cutoffs) if history_cutoffs is not None else None
         self._shown: dict[str, dict[str, str]] = {}  # user_id → {진열한 탐색 상품: arm}
@@ -102,8 +104,9 @@ class RerankService:
         return self._created
 
     def candidates(self, ids: Sequence[int] | np.ndarray, scores: Sequence[float] | np.ndarray,
-                   reason: str = STAGE2_REASON) -> list[Candidate]:
-        """내부 번호(1부터) + 점수 → Candidate."""
+                   reason: str | None = None) -> list[Candidate]:
+        """내부 번호(1부터) + 점수 → Candidate. reason이 없으면 Stage 2 사유(stage2_reason)."""
+        reason = reason or self.stage2_reason
         if len(ids) != len(scores):
             raise ValueError("ids와 scores 길이가 다름")
         if len(ids) and np.min(ids) < 1:  # 0(padding)은 _rows[-1]로 조용히 잘못 매핑됨
@@ -153,6 +156,8 @@ class RerankService:
         """Stage 2 출력(후보 전체, top_n으로 자르기 전) → 최종 Top-N.
 
         신규 상품 목록은 점수 상위 top_n개만 넘긴다 (칸을 채우는 데 그 이상은 쓰이지 않음).
+        cold-start 판단 이력 = state의 이력. session.live_history면 최근 조회(이번 방문 클릭 포함)가
+        이미 붙어 있어서, 저장된 이력이 없는 신규 사용자도 5번 보면 개인화 추천으로 넘어간다 (pipeline.py).
         """
         n = self.config.top_n if top_n is None else top_n
         history = history_count(state)
@@ -212,7 +217,8 @@ def get_rerank_service(models: Any) -> RerankService:
     store = models.store
     return RerankService(store.item_ids, store.products, product_codes=load_product_codes(),
                          popularity=build_popularity(store),
-                         history_cutoffs=store.metadata.get("history_cutoffs"))
+                         history_cutoffs=store.metadata.get("history_cutoffs"),
+                         stage2_reason=getattr(models, "objective", STAGE2_REASON))
 
 
 def build_popularity(store: Any) -> PopularityLists:

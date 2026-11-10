@@ -252,6 +252,21 @@ def test_cold_start_uses_popular_and_trending() -> None:
     assert res.items[0].product_id == "hm_0000000000"  # 번호 1 = 구매 최다
 
 
+def test_recent_views_end_cold_start() -> None:
+    """저장된 이력이 없는 신규 사용자도 최근 조회를 이력에 붙이면(session.live_history) min_history개부터 개인화."""
+    from src.recommendation.ranking.features import FeatureStore
+
+    svc = make_service(popularity=make_popularity())
+    ids, scores = np.arange(1, 38), np.linspace(1, 0, 37)
+    need = svc.config.min_history
+    h, length, p = warm_state(0)
+    few = FeatureStore.append_recent(h, length, list(range(1, need)))
+    assert svc.rerank(ids, scores, (*few, p), NOW_TS, top_n=10).is_cold_start
+    enough = FeatureStore.append_recent(h, length, list(range(1, need + 1)))
+    warm = svc.rerank(ids, scores, (*enough, p), NOW_TS, top_n=10)
+    assert not warm.is_cold_start and "cvr" in {i.reason for i in warm.items}
+
+
 def test_cold_start_list_time_follows_frozen_history() -> None:
     # test 시각(valid 끝 이후) 요청이면 valid 끝 시각 기준 목록
     svc = make_service(popularity=make_popularity(), history_cutoffs=(NOW_TS - 3 * DAY, NOW_TS - 1.5 * DAY))

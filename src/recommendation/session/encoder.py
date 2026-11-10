@@ -45,6 +45,8 @@ class SessionConfig:
     max_len: int = 10
     min_len: int = 2
     long_short_alpha: float = 0.6
+    live_history: bool = True       # 최근 조회를 User Tower·DeepFM 이력에 붙임 (pipeline.py)
+    blend_candidates: bool = True   # 결합 점수 상위 n_candidates개로 후보를 자름 (pipeline.py)
     temperature: float = 0.1
     epochs: int = 5
     lr: float = 0.001

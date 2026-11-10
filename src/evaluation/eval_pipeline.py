@@ -1,8 +1,16 @@
 """최종 추천 평가: 전체 파이프라인(Stage 1 → 세션 결합 → Stage 2 → Stage 3)의 test HitRate@50 / NDCG@50 / Coverage.
 
-    python -m src.evaluation.eval_pipeline                                  # multistage + 베이스라인 (two_tower_only, popularity)
-    python -m src.evaluation.eval_pipeline --strategies multistage,multistage_no_session,popularity
+    python -m src.evaluation.eval_pipeline                                  # 단계별 전부 + 베이스라인
+    python -m src.evaluation.eval_pipeline --strategies multistage,two_tower_only,popularity
     python -m src.evaluation.eval_pipeline --limit 2000                     # 빠른 확인용 (seed 고정 표본)
+
+단계를 하나씩 더하며 같은 조건으로 비교 (어느 단계에서 성능이 바뀌는지 확인):
+    two_tower_only        Stage 1 후보를 User Tower 유사도순 그대로 (명세 베이스라인)
+    two_tower_ranking     + Stage 2: 같은 후보를 DeepFM 점수순으로 (ranking.objective: ctr 클릭 / cvr 구매 확률)
+    multistage_no_session + Stage 3: 재정렬 (다양성·cold-start·신규 상품·MAB 탐색 칸)
+    multistage            + 세션: 같은 방문에서 앞서 본 상품 (최근 조회 이력 + 세션 후보 결합)
+    popularity            인기순 (명세 베이스라인)
+전략마다 Stage 3(MAB 통계)를 새로 만들어서 앞 전략의 탐색 기록이 섞이지 않게 한다.
 
 정답: test 조회 1건마다 "그 시점에 다음으로 본 상품" 1개 (팀 Stage 1 Recall@300과 같은 76,242건,
       학습 묶음의 examples.npz split == 2). 예측 시각 = 그 조회 시각, 사용자 이력은 모델 규칙(frozen_split)대로.
@@ -27,17 +35,36 @@ import numpy as np
 import pandas as pd
 
 from src.common.config import ROOT, artifact_dir, data_dir, load_config
+from src.common.schemas import RecommendationItem, RecommendResponse
 from src.evaluation.metrics import coverage, hit_rate_at_k, ndcg_at_k
 from src.recommendation.pipeline import MultiStageStrategy
-from src.recommendation.ranking.features import seconds
+from src.recommendation.ranking.features import seconds, stamp
+from src.recommendation.reranking.stage2 import get_rerank_service
 from src.recommendation.strategies.baselines import (
     PopularityStrategy,
     TwoTowerOnlyStrategy,
+    _response,
 )
 from src.serving.model_loader import get_recommendation_models
 
 TARGETS = {"hit_rate": 0.20, "ndcg": 0.08, "coverage": 0.20}
 BASELINES = ("two_tower_only", "popularity")  # 명세 베이스라인 → 결과에 lift_vs_<이름>
+STAGE_CHAIN = ("two_tower_only", "two_tower_ranking", "multistage_no_session", "multistage")
+
+
+class TwoTowerRankingStrategy:
+    """평가 전용: Stage 1 후보 → DeepFM 점수순 (세션·재정렬 없음). 랭킹 단계만의 효과를 보려고 둔다."""
+
+    def recommend(self, user_id: str, top_n: int, at: datetime | None = None) -> RecommendResponse:
+        begin = time.perf_counter()
+        models = get_recommendation_models()
+        now = stamp(at or datetime.now(timezone.utc))
+        ids, _, state = models.retriever.retrieve(user_id, models.cfg["candidate"]["n_candidates"], now)
+        scores = models.score(ids, state, now)
+        order = np.argsort(-scores, kind="stable")[:top_n]
+        items = [RecommendationItem(product_id=models.store.item_ids[ids[i] - 1], score=float(scores[i]),
+                                    reason=models.objective) for i in order]
+        return _response(user_id, items, begin)
 
 
 def session_prefixes(users: np.ndarray, times: np.ndarray) -> list[list[str]]:
@@ -118,13 +145,18 @@ def run(strategies: list[str], limit: int | None = None) -> dict[str, Any]:
         "k": q.k, "n_queries": len(q.users), "with_session": sum(bool(s) for s in q.sessions),
         "target": "next viewed product (test split, examples.npz)", "targets": TARGETS,
         "model_version": load_config("recommend")["version"],
+        "session": {k: load_config("recommend")["session"].get(k) for k in ("live_history", "blend_candidates")},
+        "stage_chain": [name for name in STAGE_CHAIN if name in strategies],
         "measured_at": datetime.now().isoformat(timespec="seconds"),
     }
     for name in strategies:
+        get_rerank_service.cache_clear()  # 전략마다 MAB 통계를 새로 시작
         if name == "popularity":
             strategy, use_session = PopularityStrategy(), False
         elif name == "two_tower_only":
             strategy, use_session = TwoTowerOnlyStrategy(), False
+        elif name == "two_tower_ranking":
+            strategy, use_session = TwoTowerRankingStrategy(), False
         elif name in ("multistage", "multistage_no_session"):
             strategy, use_session = MultiStageStrategy(), name == "multistage"
         else:
@@ -145,7 +177,7 @@ def run(strategies: list[str], limit: int | None = None) -> dict[str, Any]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--strategies", default="multistage,two_tower_only,popularity")
+    parser.add_argument("--strategies", default="multistage,multistage_no_session,two_tower_ranking,two_tower_only,popularity")
     parser.add_argument("--limit", type=int, default=None, help="평가할 조회 수 (기본: 전부)")
     args = parser.parse_args()
     result = run(args.strategies.split(","), args.limit)

@@ -1,7 +1,9 @@
-"""Linear + FM + MLP. 이 경로는 조회 조건부 CVR만 학습한다."""
+"""Linear + FM + MLP. 학습 목표는 configs/recommend.yaml ranking.objective (ctcvr / ctr / cvr)."""
 
 import torch
 from torch import nn
+
+from src.recommendation.ranking.features import RANK_FEATURES_V2
 
 
 class DeepFM(nn.Module):
@@ -43,7 +45,7 @@ def make_model(store, cfg):
     r = cfg["ranking"]
     return DeepFM(
         store.sizes + [6, 7],
-        store.metadata["profile_dim"] + 5,
+        store.metadata["profile_dim"] + 5 + (len(RANK_FEATURES_V2) if r.get("features", 1) >= 2 else 0),
         r["embedding_dim"],
         r["dnn_hidden"],
         r["dropout"],

@@ -74,7 +74,7 @@ def main() -> None:
     out = ROOT / cfg["paths"]["output_dir"]
     out.mkdir(parents=True, exist_ok=True)
     pop.public.to_parquet(out / "users.parquet", index=False)
-    pop.hidden.drop(columns=["signup_day"]).to_parquet(out / "users_hidden.parquet", index=False)
+    pop.hidden.drop(columns=["signup_day", "signup_sec"]).to_parquet(out / "users_hidden.parquet", index=False)
     events.to_parquet(out / "events.parquet", index=False)
     pq.write_table(impressions, out / "impressions.parquet")
     print(f"[simulator] 저장 → {out.relative_to(ROOT)} (users, users_hidden, events, impressions) "

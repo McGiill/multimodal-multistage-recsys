@@ -94,6 +94,7 @@ def searcher(tmp_path) -> Searcher:
     image_emb = l2_normalize(np.stack([p[3] for p in PRODUCTS]))
     catalog = pd.DataFrame({
         "product_id": [f"hm_{i:010d}" for i in range(len(PRODUCTS))],
+        "product_code": [str(i) for i in range(len(PRODUCTS))],  # 팀 카탈로그 필수 열 (Searcher가 같은 디자인 구분에 씀)
         "name": [f"item {i}" for i in range(len(PRODUCTS))],
         "price": [10.0] * len(PRODUCTS),
         "category_l1": [p[2] for p in PRODUCTS],

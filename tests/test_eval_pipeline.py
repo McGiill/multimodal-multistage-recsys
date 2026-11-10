@@ -50,6 +50,24 @@ def test_run_compares_multistage_with_both_baselines(monkeypatch):
     assert "lift_vs_popularity" not in result["two_tower_only"]  # 베이스라인끼리는 비교 안 함
 
 
+def test_run_has_ranking_only_stage(monkeypatch):
+    """단계별 비교: two_tower_ranking = Stage 1 후보를 DeepFM순으로 (세션·재정렬 없음)."""
+    from types import SimpleNamespace
+
+    q = SimpleNamespace(k=50, users=np.array(["U1"]), sessions=[[]])
+    calls = []
+
+    def fake_eval(strategy, q, use_session, name=""):
+        calls.append((name, type(strategy).__name__, use_session))
+        return dict.fromkeys(("hit_rate", "ndcg", "coverage"), 0.1)
+
+    monkeypatch.setattr(eval_pipeline, "load_queries", lambda limit: q)
+    monkeypatch.setattr(eval_pipeline, "evaluate_strategy", fake_eval)
+    result = eval_pipeline.run(["two_tower_only", "two_tower_ranking", "multistage"])
+    assert calls[1] == ("two_tower_ranking", "TwoTowerRankingStrategy", False)
+    assert result["stage_chain"] == ["two_tower_only", "two_tower_ranking", "multistage"]
+
+
 def test_tradeoff_changes_only_exploration_slots_and_restores(monkeypatch):
     from types import SimpleNamespace
 

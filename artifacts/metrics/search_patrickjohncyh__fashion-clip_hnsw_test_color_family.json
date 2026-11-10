@@ -1,0 +1,89 @@
+{
+  "model_name": "patrickjohncyh/fashion-clip",
+  "index": {
+    "type": "hnsw",
+    "nlist": 256,
+    "m": 16,
+    "nbits": 8,
+    "nprobe": 16,
+    "hnsw_m": 32,
+    "ef_construction": 200,
+    "ef_search": 128
+  },
+  "weights": {
+    "text_query": {
+      "image_weight": 0.4,
+      "bm25_weight": 0.4
+    },
+    "image_query": {
+      "color_weight": 0.75,
+      "category_weight": 0.5
+    },
+    "hybrid": {
+      "text_weight": 0.7
+    }
+  },
+  "k": 10,
+  "split": "test",
+  "relevance": "color_family",
+  "eval_set": "data/processed/search_eval_v2.parquet",
+  "mrr_min_grade": 1,
+  "seed": 42,
+  "evaluated_at": "2026-11-10T02:51:34",
+  "results": {
+    "text": {
+      "n_queries": 493,
+      "mrr": 0.926,
+      "ndcg@10": 0.743,
+      "hit_rate@10": 0.9939
+    },
+    "image": {
+      "n_queries": 507,
+      "mrr": 0.7427,
+      "ndcg@10": 0.5675,
+      "hit_rate@10": 0.8817
+    },
+    "hybrid": {
+      "n_queries": 246,
+      "mrr": 0.9632,
+      "ndcg@10": 0.8682,
+      "hit_rate@10": 0.9919
+    },
+    "all": {
+      "n_queries": 1246,
+      "mrr": 0.8588,
+      "ndcg@10": 0.6963,
+      "hit_rate@10": 0.9478
+    },
+    "clip_only_text": {
+      "n_queries": 493,
+      "mrr": 0.7795,
+      "ndcg@10": 0.5768,
+      "hit_rate@10": 0.9108
+    },
+    "clip_only_image": {
+      "n_queries": 507,
+      "mrr": 0.7116,
+      "ndcg@10": 0.3967,
+      "hit_rate@10": 0.931
+    },
+    "clip_only_hybrid": {
+      "n_queries": 246,
+      "mrr": 0.9122,
+      "ndcg@10": 0.7828,
+      "hit_rate@10": 0.9675
+    },
+    "clip_only_all": {
+      "n_queries": 1246,
+      "mrr": 0.7781,
+      "ndcg@10": 0.5442,
+      "hit_rate@10": 0.9302
+    },
+    "bm25_text": {
+      "n_queries": 493,
+      "mrr": 0.8835,
+      "ndcg@10": 0.6324,
+      "hit_rate@10": 0.9858
+    }
+  }
+}

@@ -122,6 +122,24 @@ def test_events_follow_rules(generated) -> None:
     assert events["timestamp"].min() >= pd.Timestamp(START) and events["timestamp"].max() < end
 
 
+def test_no_events_before_signup_and_no_duplicate_impressions(generated) -> None:
+    """정합성: 가입 시각 이후에만 행동하고, 한 노출 목록에 같은 상품이 두 번 들어가지 않는다 (validate.integrity)."""
+    from src.simulator.validate import integrity
+
+    _, _, pop, events, impressions = generated
+    assert integrity(pop.public, events, impressions) == {
+        "events_before_signup": 0, "users_with_events_before_signup": 0, "impressions_with_duplicate_products": 0}
+
+
+def test_session_starts_never_before_signup() -> None:
+    cfg, _, world, personas, _ = _setup()
+    sim = Simulator(world, cfg, personas)
+    signup_sec = 3 * 86400 + 80000.0  # 4일째 거의 자정에 가입 → 그날 방문은 전부 가입 이후로 옮겨야 함
+    for s in range(50):
+        starts = sim._session_starts(3, 20.0, np.random.default_rng(s), signup_sec)
+        assert (starts >= signup_sec).all() and (np.diff(starts) >= 0).all()
+
+
 def test_same_seed_same_result() -> None:
     a = _setup(n_users=10)
     b = _setup(n_users=10)

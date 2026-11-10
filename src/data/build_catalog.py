@@ -8,7 +8,8 @@
 - 카테고리 3단계: index_group_name → product_group_name → product_type_name
 - 가격: 상품별 최빈 거래가(= 정가) × 590 → 달러 (H&M 정규화 가격 = 실제 가격 ÷ 590)
 - 브랜드: 매장 코너(section_name) 단위 가상 브랜드 (configs/catalog.yaml → brands)
-- 등록일: 임의 생성, 브랜드마다 new_ratio 만큼 신규 상품 (configs/catalog.yaml → created_at)
+- 등록일: 임의 생성, 브랜드마다 new_ratio 만큼 로그 기간(new_range) 중에 고르게 등록되는 신상품
+          (configs/catalog.yaml → created_at). 나머지는 로그 시작 전(old_range)
 - 판매량 같은 행동 지표는 넣지 않는다 (행동 로그에서 계산)
 """
 
@@ -115,9 +116,10 @@ def assign_brands(articles: pd.DataFrame, brands: dict[str, Any]) -> pd.Series:
 
 
 def assign_created_at(catalog: pd.DataFrame, cfg: dict[str, Any], seed: int) -> pd.Series:
-    """디자인(product_code) 단위로 등록일 생성: 브랜드마다 상품의 new_ratio 이상을 신규로 고른다."""
+    """디자인(product_code) 단위로 등록일 생성: 브랜드마다 상품의 new_ratio 이상을 로그 기간 중 등록(신상품)으로 고른다.
+    신상품 등록일은 new_range 안에서 고르게 → train·valid·test 어느 기간에나 신상품이 생긴다."""
     rng = np.random.default_rng(seed)
-    ref = pd.Timestamp(cfg["reference_date"])
+    new_start, new_end = (pd.Timestamp(d) for d in cfg["new_range"])
     old_start, old_end = (pd.Timestamp(d) for d in cfg["old_range"])
 
     n_items = catalog.groupby("product_code").size()
@@ -132,7 +134,7 @@ def assign_created_at(catalog: pd.DataFrame, cfg: dict[str, Any], seed: int) -> 
 
     codes = designs["product_code"].to_numpy()
     is_new = np.isin(codes, new_codes)
-    new_dates = ref - pd.to_timedelta(rng.integers(0, cfg["new_days"], len(codes)), unit="D")
+    new_dates = new_start + pd.to_timedelta(rng.integers(0, (new_end - new_start).days + 1, len(codes)), unit="D")
     old_dates = old_start + pd.to_timedelta(rng.integers(0, (old_end - old_start).days + 1, len(codes)), unit="D")
     dates = pd.Series(np.where(is_new, new_dates.to_numpy(), old_dates.to_numpy()), index=codes)
     return catalog["product_code"].map(dates)
@@ -189,8 +191,10 @@ def summarize(catalog: pd.DataFrame, cfg: dict[str, Any]) -> None:
     sizes = catalog["brand"].value_counts()
     print(f"  브랜드 {len(sizes)}개 (상품 수 최소 {sizes.min():,} / 중앙값 {int(sizes.median()):,} / 최대 {sizes.max():,})")
     c = cfg["created_at"]
+    in_log = catalog["created_at"] >= pd.Timestamp(c["new_range"][0])
     is_new = catalog["created_at"] > pd.Timestamp(c["reference_date"]) - pd.Timedelta(days=c["new_days"])
-    print(f"  신규 상품(기준일 {c['reference_date']}, {c['new_days']}일 이내): {is_new.sum():,}개 ({is_new.mean():.1%})")
+    print(f"  로그 기간 중 등록(신상품): {in_log.sum():,}개 ({in_log.mean():.1%}), "
+          f"그중 기준일 {c['reference_date']} 기준 {c['new_days']}일 이내: {is_new.sum():,}개 ({is_new.mean():.1%})")
 
 
 def main() -> None:

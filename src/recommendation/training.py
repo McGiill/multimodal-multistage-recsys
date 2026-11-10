@@ -7,6 +7,7 @@ from pathlib import Path
 
 import faiss
 import numpy as np
+import pandas as pd
 import torch
 import yaml
 
@@ -18,6 +19,7 @@ from src.recommendation.ranking.deepfm import make_model as ranker
 from src.recommendation.ranking.features import (
     FeatureStore,
     prepare_examples,
+    prepare_impression_examples,
     rank_features,
     split_info,
 )
@@ -116,6 +118,7 @@ def train_candidate(root, out, cfg):
         history_cutoffs=cuts[1:3], source_meta=meta,
         timestamp_convention="naive source timestamps interpreted as UTC",
         source_events=store.audit["input_events"], data_audit=store.audit,
+        objective=cfg["ranking"].get("objective", "cvr"),
     )
     print("Data audit", store.audit, flush=True)
     store.excluded_events.to_parquet(out / "excluded_pre_signup_events.parquet", index=False)
@@ -227,27 +230,64 @@ def predict(model, sparse, dense):
     return np.asarray(out)
 
 
-def train_ranking(out):
+def ranking_examples(out, store, cfg, root=None):
+    """Stage 2 학습·평가 예시 (ranking.objective). 노출 기반은 ranking_examples_<목표>.npz로 저장해 두고 재사용.
+    - ctcvr: 노출 후 구매 = 1, 보여줬지만 안 누름 + 눌렀지만 안 삼 = 0 (명세 "노출 후 비클릭" 음성 + 구매 목표)
+    - ctr  : 클릭 = 1, 보여줬지만 안 누름 = 0
+    - cvr  : 조회 후 24시간 안 구매 = 1 (조회한 상품만, examples.npz)"""
     out = Path(out)
-    cfg, store, _ = load_bundle(out)
+    r = cfg["ranking"]
+    objective = r.get("objective", "cvr")
+    if objective == "cvr":
+        return dict(np.load(out / "examples.npz", allow_pickle=False))
+    if objective not in ("ctr", "ctcvr"):
+        raise ValueError(f"ranking.objective는 ctcvr / ctr / cvr 중 하나: {objective}")
+    path = out / f"ranking_examples_{objective}.npz"
+    if not path.exists():
+        rng = np.random.default_rng(cfg.get("seed", 42))
+        window = r.get("cvr_window_seconds", 86400) if objective == "ctcvr" else None
+        data = prepare_impression_examples(
+            store, root or data_dir(), r.get("impression_negatives", 4), rng, purchase_window=window
+        )
+        np.savez_compressed(path, **data)
+    return dict(np.load(path, allow_pickle=False))
+
+
+@torch.inference_mode()
+def ranking_inputs(cfg, store, tower, item_vectors, data, ix, chunk=200_000):
+    """예시 행 ix → Stage 2 입력 (sparse, dense). 특징 v2면 Two-Tower 취향 점수를 같이 계산한다
+    (같은 사용자·시각은 사용자 벡터를 한 번만 계산). 메모리를 아끼려고 chunk 행씩 만든다."""
+    version = cfg["ranking"].get("features", 1)
+    parts = []
+    for start in range(0, len(ix), chunk):
+        rows = ix[start:start + chunk]
+        affinity = None
+        if version >= 2:
+            codes, _ = pd.factorize(pd.MultiIndex.from_arrays([data["user"][rows], data["time"][rows]]))
+            first = rows[np.unique(codes, return_index=True)[1]]
+            q = np.concatenate([tower.user(*tensors(data, first[i:i + 4096])).numpy()
+                                for i in range(0, len(first), 4096)])
+            affinity = (q[codes] * item_vectors[data["target"][rows] - 1]).sum(1)
+        parts.append(rank_features(store, data["target"][rows], data["history"][rows], data["profile"][rows],
+                                   data["time"][rows], version, affinity))
+    return np.concatenate([p[0] for p in parts]), np.concatenate([p[1] for p in parts])
+
+
+def train_ranking(out, root=None):
+    out = Path(out)
+    cfg, store, tower = load_bundle(out)
     rng = seed(cfg)
     r = cfg["ranking"]
-    if r.get("objective", "cvr") != "cvr":
-        raise ValueError("This integration supports CVR only")
-    data = dict(np.load(out / "examples.npz", allow_pickle=False))
+    objective = r.get("objective", "cvr")
+    data = ranking_examples(out, store, cfg, root)
+    item_vectors = np.load(out / "item_vectors.npy") if r.get("features", 1) >= 2 else None
     sets = {}
     for j, name in enumerate(["train", "valid"]):
         ix = np.flatnonzero((data["split"] == j) & data["mature"])
-        s, d = rank_features(
-            store,
-            data["target"][ix],
-            data["history"][ix],
-            data["profile"][ix],
-            data["time"][ix],
-        )
+        s, d = ranking_inputs(cfg, store, tower, item_vectors, data, ix)
         y = data["label"][ix]
         if len(np.unique(y)) < 2:
-            raise ValueError(f"{name}: CVR needs both purchases and non-purchases")
+            raise ValueError(f"{name}: {objective} needs both positive and negative examples")
         sets[name] = (s, d, y)
     model = ranker(store, cfg)
     opt = torch.optim.Adam(model.parameters(), lr=r["lr"])
@@ -273,12 +313,13 @@ def train_ranking(out):
         vs, vd, vy = sets["valid"]
         score = auc(vy, predict(model, vs, vd))
         logs.append({"epoch": epoch + 1, "loss": loss_sum / len(y), "valid_auc": score})
-        print("CVR", logs[-1], flush=True)
+        print(objective.upper(), logs[-1], flush=True)
         if score > best:
             best = score
             state = copy.deepcopy(model.state_dict())
     model.load_state_dict(state)
-    torch.save(model.state_dict(), out / "ranking_cvr.pt")
+    torch.save(model.state_dict(), out / f"ranking_{objective}.pt")
     (out / "ranking_training.json").write_text(
-        json.dumps(logs, indent=2), encoding="utf-8"
+        json.dumps({"objective": objective, "features": r.get("features", 1), "epochs": logs}, indent=2),
+        encoding="utf-8",
     )

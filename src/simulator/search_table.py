@@ -56,7 +56,8 @@ def _attribute_results(catalog: pd.DataFrame, queries: dict[str, np.ndarray], po
 
     out = np.full((len(vocab), k), -1, dtype=np.int32)
     for qi, q in enumerate(vocab):
-        rows = by_query[q][:k]
+        # 여러 템플릿이 같은 검색어를 만들면 같은 상품이 두 번 들어가므로 순서를 지키며 중복 제거
+        rows = list(dict.fromkeys(by_query[q]))[:k]
         if len(rows) < k:
             taken = set(rows)
             extra = [r for r in by_type[l3[first_item[q]]] if r not in taken]
@@ -74,7 +75,7 @@ def _clip_results(catalog: pd.DataFrame, vocab: pd.Index, k: int) -> tuple[np.nd
     pos = pd.Series(np.arange(len(catalog)), index=catalog["product_id"])
     out = np.full((len(vocab), k), -1, dtype=np.int32)
     for qi in range(len(vocab)):
-        ids = searcher.search_vectors(vectors[qi], None, k).product_ids
+        ids = searcher.search_vectors(vectors[qi], None, k, str(vocab[qi])).product_ids  # 검색어 문장 → BM25 융합까지
         rows = pos.loc[ids].to_numpy()
         out[qi, : len(rows)] = rows
     return out, cfg["clip"]["model_name"]
@@ -86,9 +87,12 @@ def build_search_table(sim_cfg: dict[str, Any], catalog: pd.DataFrame, popularit
     engine, k = sim_cfg["search"]["engine"], sim_cfg["search"]["candidates"]
     queries = item_queries(catalog)
     vocab = pd.Index(sorted(set().union(*[set(q) for q in queries.values()])))
-    model = load_config("search")["clip"]["model_name"] if engine == "clip" else "attribute"
+    search_cfg = load_config("search")
+    model = search_cfg["clip"]["model_name"] if engine == "clip" else "attribute"
     key = {"engine": engine, "model": model, "k": k, "n_queries": len(vocab), "n_products": len(catalog),
            "first_product": catalog["product_id"].iloc[0], "last_product": catalog["product_id"].iloc[-1]}
+    if engine == "clip":  # 검색 가중치·인덱스·후보 수가 바뀌면 결과가 달라지므로 다시 만든다
+        key["search"] = {name: search_cfg[name] for name in ("text_query", "index", "retrieval")}
 
     path = out_dir / f"search_{engine}_{model_slug(model)}.npz" if out_dir else None
     if path is not None and path.exists():

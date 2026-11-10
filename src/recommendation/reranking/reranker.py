@@ -4,6 +4,7 @@ Stage 2가 점수를 매긴 후보를 받아 최종 Top-N을 만든다.
 
 적용 순서
   1. cold-start 판단: 이력이 min_history 미만이면 메인 목록을 인기+트렌딩으로 교체
+     (이력 = 저장된 조회 + 최근 조회. session.live_history가 false면 저장된 조회만: pipeline.py)
   2. 메인 목록 정렬 (Stage 2 점수 내림차순)
   3. 슬롯 위치 계산: 설정에는 개수만 있고, 위치는 Top-N을 균등하게 나눈 지점 (slot_positions)
   4. 위치별 채우기: 슬롯 위치(신규 상품, 탐색)는 해당 풀에서 먼저 고르고,

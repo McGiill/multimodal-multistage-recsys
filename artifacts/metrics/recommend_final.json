@@ -1,36 +1,104 @@
 {
   "k": 50,
-  "n_queries": 76242,
-  "with_session": 32682,
+  "n_queries": 77834,
+  "with_session": 46260,
   "target": "next viewed product (test split, examples.npz)",
   "targets": {
     "hit_rate": 0.2,
     "ndcg": 0.08,
     "coverage": 0.2
   },
-  "model_version": "stage12-cvr-team-v20261022",
-  "measured_at": "2026-11-05T08:46:56",
+  "model_version": "stage12-ctcvr-v20261110c",
+  "session": {
+    "live_history": true,
+    "blend_candidates": true
+  },
+  "stage_chain": [
+    "two_tower_only",
+    "two_tower_ranking",
+    "multistage_no_session",
+    "multistage"
+  ],
+  "measured_at": "2026-11-10T10:39:27",
   "multistage": {
-    "hit_rate": 0.05937672149209097,
-    "ndcg": 0.016083393832870697,
-    "coverage": 0.04478,
-    "latency_p95_ms": 20.357495005009696,
+    "hit_rate": 0.07393940951255236,
+    "ndcg": 0.02169793094275474,
+    "coverage": 0.0544,
+    "latency_p95_ms": 47.23291479974704,
     "passed": {
       "hit_rate": false,
       "ndcg": false,
       "coverage": false
     },
+    "lift_vs_two_tower_only": {
+      "hit_rate": -0.013033784942548365,
+      "ndcg": 0.09997459199429626,
+      "coverage": 2.105022831050228
+    },
     "lift_vs_popularity": {
-      "hit_rate": -0.03331197950032028,
-      "ndcg": -0.09464574840798257,
-      "coverage": 43.78
+      "hit_rate": 0.26622662266226627,
+      "ndcg": 0.34573745258443256,
+      "coverage": 53.4
+    }
+  },
+  "multistage_no_session": {
+    "hit_rate": 0.07157540406506153,
+    "ndcg": 0.021270638480318196,
+    "coverage": 0.04488,
+    "latency_p95_ms": 15.238308449897884,
+    "passed": {
+      "hit_rate": false,
+      "ndcg": false,
+      "coverage": false
+    },
+    "lift_vs_two_tower_only": {
+      "hit_rate": -0.044589264277139495,
+      "ndcg": 0.07831304033432951,
+      "coverage": 1.5616438356164384
+    },
+    "lift_vs_popularity": {
+      "hit_rate": 0.2257425742574255,
+      "ndcg": 0.31923614831606906,
+      "coverage": 43.88
+    }
+  },
+  "two_tower_ranking": {
+    "hit_rate": 0.07205077472569828,
+    "ndcg": 0.0213944087127989,
+    "coverage": 0.045,
+    "latency_p95_ms": 7.983889700244617,
+    "passed": {
+      "hit_rate": false,
+      "ndcg": false,
+      "coverage": false
+    },
+    "lift_vs_two_tower_only": {
+      "hit_rate": -0.03824386897616194,
+      "ndcg": 0.08458756076363616,
+      "coverage": 1.5684931506849313
+    },
+    "lift_vs_popularity": {
+      "hit_rate": 0.23388338833883382,
+      "ndcg": 0.3269125593897242,
+      "coverage": 44.0
+    }
+  },
+  "two_tower_only": {
+    "hit_rate": 0.0749158465452116,
+    "ndcg": 0.01972584739745266,
+    "coverage": 0.01752,
+    "latency_p95_ms": 3.1246130498857374,
+    "passed": {
+      "hit_rate": false,
+      "ndcg": false,
+      "coverage": false
     }
   },
   "popularity": {
-    "hit_rate": 0.06142283780593374,
-    "ndcg": 0.01776475208968081,
+    "hit_rate": 0.05839350412416168,
+    "ndcg": 0.016123450306807445,
     "coverage": 0.001,
-    "latency_p95_ms": 1.0873000137507915,
+    "latency_p95_ms": 0.8040566996442063,
     "passed": {
       "hit_rate": false,
       "ndcg": false,
