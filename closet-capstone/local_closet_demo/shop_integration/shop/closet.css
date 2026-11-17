@@ -1,0 +1,171 @@
+/* Closet pages inherit the existing shop palette and typography. */
+.mypage-link { display:inline-flex; align-items:center; white-space:nowrap; }
+.closet-heading { display:flex; align-items:center; justify-content:space-between; gap:20px; margin:16px 0 28px; }
+.eyebrow { color:var(--muted); font-size:11px; letter-spacing:.16em; font-weight:700; margin:0 0 8px; }
+.closet-heading h1,.closet-anchor h1 { margin:0 0 8px; font-size:30px; letter-spacing:-.04em; }
+.closet-heading p,.closet-anchor p { margin:6px 0; }
+.closet-count { color:var(--muted); font-size:20px; margin-left:8px; }
+.closet-preferences { padding:22px; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); margin-bottom:30px; }
+.closet-preferences h2 { margin:0; font-size:18px; }
+.closet-preferences form { display:flex; flex-wrap:wrap; gap:14px; align-items:center; margin-top:16px; }
+.closet-style-options { display:flex; flex-wrap:wrap; gap:8px; }
+.closet-style-options label { position:relative; cursor:pointer; }
+.closet-style-options input { position:absolute; opacity:0; width:100%; height:100%; margin:0; cursor:pointer; }
+.closet-style-options span { display:block; padding:8px 14px; border:1px solid var(--line); border-radius:20px; }
+.closet-style-options input:checked + span { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+.closet-style-options input:focus-visible + span { outline:3px solid var(--accent); outline-offset:3px; }
+.closet-toolbar { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:16px; }
+.closet-toolbar h2 { font-size:20px; margin:0; }
+.closet-toolbar select,.closet-add-panel select { padding:8px; background:var(--surface); border:1px solid var(--line); border-radius:6px; max-width:100%; }
+.closet-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:20px; }
+.closet-card { min-width:0; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; }
+.closet-photo { height:235px; background:#f1f0ed; padding:15px; }
+.closet-photo img { width:100%; height:100%; object-fit:contain; }
+.closet-card-body { padding:16px; }
+.closet-card h3 { font-size:15px; margin:0 0 6px; font-weight:600; overflow-wrap:anywhere; }
+.closet-cta { display:flex; align-items:center; justify-content:center; width:100%; margin:14px 0 10px; text-align:center; }
+.closet-card .link-btn { font-size:12px; }
+.closet-empty { grid-column:1/-1; padding:44px 20px; text-align:center; border:1px dashed var(--line); border-radius:var(--radius); }
+.closet-empty p { color:var(--muted); }
+.closet-add-panel { margin-top:28px; padding:20px; border:1px solid var(--line); background:var(--surface); border-radius:var(--radius); }
+.closet-add-panel summary { cursor:pointer; font-weight:600; }
+.closet-add-panel form { display:flex; flex-wrap:wrap; align-items:center; gap:12px; margin:16px 0; }
+.closet-storage { margin-top:22px; }
+.closet-anchor { display:flex; align-items:center; gap:24px; margin:24px 0 32px; padding:22px; background:var(--surface); border-radius:var(--radius); }
+.closet-anchor .closet-photo { width:110px; height:130px; flex-shrink:0; border-radius:6px; }
+.outfit-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
+.outfit-photo { height:330px; padding:12px; }
+.closet-reason { font-size:12px; color:var(--accent); min-height:18px; }
+.closet-detail { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.6fr); gap:40px; align-items:start; }
+.closet-look-photo { position:relative; max-width:390px; margin:auto; }
+.closet-look-photo > img { width:100%; height:auto; }
+.closet-region { position:absolute; border:2px solid #23395b; pointer-events:none; }
+.closet-region span { background:#23395b; color:white; padding:4px; font-size:11px; position:absolute; bottom:100%; white-space:nowrap; }
+.closet-box-toggle { display:block; margin:16px 0; font-size:13px; }
+.closet-owned-note { padding:18px; background:var(--accent-soft); border-radius:var(--radius); margin-bottom:28px; }
+.closet-owned-note h2 { font-size:20px; margin:6px 0; }
+.closet-owned-note .closet-photo { width:100px; height:125px; margin:12px 0; }
+.closet-similar-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
+.closet-group { margin:24px 0; }
+.closet-group > h3 { font-size:16px; }
+.closet-actions { display:flex; flex-wrap:wrap; gap:12px; margin-top:20px; }
+@media(max-width:900px) { .closet-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } .closet-detail { gap:20px; } }
+@media(max-width:640px) { .closet-grid,.outfit-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; } .closet-photo { height:200px; } .outfit-photo { height:260px; } .closet-detail { grid-template-columns:1fr; } .closet-anchor { padding:16px; gap:16px; } .closet-anchor h1,.closet-heading h1 { font-size:23px; } .closet-heading { align-items:flex-start; } .closet-card-body { padding:12px; } .closet-cta { font-size:12px; } }
+@media(max-width:380px) { .closet-grid { grid-template-columns:1fr; } .closet-heading { flex-direction:column; } }
+
+/* My page: quiet navigation and unframed product photography. */
+.mypage-heading { padding:22px 0 30px; margin-bottom:40px; border-bottom:1px solid var(--line); }
+.mypage-heading h1 { font-size:28px; font-weight:600; letter-spacing:-.06em; margin:0; }
+.mypage-shop-link { font-size:12px; color:var(--muted); text-decoration:underline; text-underline-offset:4px; }
+.mypage-shell { --accent:var(--ink); --accent-ink:var(--bg); display:grid; grid-template-columns:150px minmax(0,1fr); gap:60px; align-items:start; }
+.mypage-sidebar { position:sticky; top:100px; }
+.mypage-nav-current { width:fit-content; margin:4px 0 0; padding-bottom:4px; border-bottom:1px solid var(--ink); font-size:14px; font-weight:600; }
+.mypage-auto-note { margin-top:28px; line-height:1.8; }
+.mypage-menu { display:flex; flex-direction:column; align-items:flex-start; gap:20px; padding-top:4px; }
+.mypage-menu button { padding:0 0 4px; border:0; border-bottom:1px solid transparent; border-radius:0; background:none; color:var(--muted); cursor:pointer; font-size:14px; }
+.mypage-menu button[aria-pressed="true"] { color:var(--ink); border-bottom-color:var(--ink); font-weight:600; }
+.mypage-menu button:hover { color:var(--ink); }
+.mypage-style-summary { margin-top:42px; border-top:1px solid var(--line); padding-top:18px; }
+.mypage-style-summary p { margin:8px 0 0; font-size:12px; line-height:1.8; }
+.mypage-content { min-width:0; min-height:480px; }
+.mypage-content [hidden] { display:none !important; }
+.mypage-section-heading { display:flex; justify-content:space-between; align-items:center; gap:16px; margin:0 0 28px; }
+.mypage-section-heading h2 { font-size:20px; letter-spacing:-.04em; margin:0 0 8px; font-weight:600; }
+.mypage-section-heading .caption { margin:0; font-size:12px; }
+.mypage-add-button { padding:9px 18px; border:1px solid var(--ink); background:none; border-radius:0; font-size:12px; cursor:pointer; white-space:nowrap; }
+.mypage-add-button:hover { background:var(--ink); color:var(--bg); }
+.mypage-filter { border-top:1px solid var(--line); padding-top:14px; margin-bottom:22px; font-size:12px; }
+.mypage-tools { display:flex; align-items:center; gap:18px; }
+.mypage-tools .link-btn { font-size:12px; color:var(--muted); }
+.mypage-filter select { border:0; background:transparent; font-size:12px; padding:4px 0 4px 8px; }
+.mypage-content .closet-grid { grid-template-columns:repeat(3,minmax(0,1fr)); gap:32px 20px; }
+.mypage-content .closet-card { border:0; border-radius:0; background:transparent; box-shadow:none; overflow:visible; }
+.mypage-content .closet-photo { height:auto; aspect-ratio:4/5; padding:16px; background:#f0efec; }
+.mypage-product-select { display:block; width:100%; border:0; padding:0; border-radius:0; background:none; text-align:left; font:inherit; color:inherit; text-decoration:none; cursor:pointer; }
+.mypage-product-select:focus-visible { outline:2px solid var(--ink); outline-offset:4px; }
+.mypage-product-select:hover img { opacity:.85; }
+.mypage-product-select[aria-pressed="true"] .closet-photo { outline:2px solid var(--ink); outline-offset:-2px; }
+.mypage-product-select[aria-pressed="true"] h3 { font-weight:700; }
+.mypage-inline-outfits { grid-column:1/-1; min-width:0; border-top:1px solid var(--line); border-bottom:1px solid var(--line); padding:28px 0; scroll-margin-top:100px; }
+.mypage-inline-outfits .mypage-section-heading { margin-bottom:20px; }
+.mypage-inline-outfits .mypage-section-heading h2 { font-size:18px; }
+.mypage-inline-outfits .outfit-photo { aspect-ratio:3/4; padding:12px; }
+.mypage-outfit-select { display:block; color:inherit; text-decoration:none; }
+.mypage-outfit-select:focus-visible { outline:2px solid var(--ink); outline-offset:4px; }
+.mypage-outfit-select:hover img { opacity:.85; }
+.mypage-content .closet-card-body { padding:13px 0 0; }
+.mypage-content .closet-card-body .caption { margin:0 0 5px; font-size:11px; }
+.mypage-content .closet-card h3 { font-size:13px; margin:0; font-weight:500; }
+.mypage-remove { display:block; margin-top:14px; color:var(--danger); }
+.mypage-content .closet-add-panel { border:0; border-top:1px solid var(--line); border-radius:0; background:none; padding:22px 0; margin-top:42px; }
+.mypage-content .closet-add-panel summary { font-size:13px; font-weight:500; }
+.mypage-content .primary { border-radius:0; font-size:12px; }
+.mypage-content .closet-preferences { border:0; border-top:1px solid var(--line); background:none; border-radius:0; padding:24px 0; }
+.mypage-content .closet-preferences form { display:block; margin:0; }
+.mypage-content .closet-style-options span { border-radius:0; padding:12px 22px; font-size:13px; }
+.mypage-save { display:flex; align-items:center; gap:16px; border-top:1px solid var(--line); margin-top:32px; padding-top:20px; font-size:12px; }
+@media(max-width:900px) { .mypage-shell { grid-template-columns:120px minmax(0,1fr); gap:30px; } .mypage-content .closet-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media(max-width:640px) { .mypage-shell { grid-template-columns:1fr; gap:28px; } .mypage-sidebar { position:static; } .mypage-style-summary { display:none; } .mypage-menu { flex-direction:row; gap:24px; border-bottom:1px solid var(--line); padding:0; } .mypage-menu button { padding-bottom:12px; } .mypage-heading { margin-bottom:24px; padding:10px 0 22px; } .mypage-heading h1 { font-size:24px; } .mypage-content .closet-photo { padding:10px; } .mypage-content .closet-grid { gap:26px 12px; } .mypage-section-heading h2 { font-size:19px; } .mypage-section-heading .caption { font-size:11px; } .mypage-add-button { padding:8px 12px; } }
+@media(max-width:360px) { .mypage-content .closet-grid { grid-template-columns:1fr; } }
+
+/* First-visit browsing shares the wardrobe's quiet visual language. */
+.wardrobe-page .mypage-heading { padding:4px 0 18px; margin-bottom:24px; }
+.wardrobe-page .mypage-heading h1 { font-size:17px; font-weight:500; }
+.wardrobe-page .mypage-shell { display:block; }
+.wardrobe-page .mypage-section-heading { margin-bottom:16px; }
+.wardrobe-page .mypage-filter { border-top:0; padding-top:12px; margin-bottom:0; }
+.wardrobe-categories { display:flex; flex-wrap:wrap; gap:8px 26px; border-bottom:1px solid var(--line); margin-top:22px; }
+.wardrobe-categories button { display:flex; align-items:center; gap:7px; padding:10px 1px 12px; border:0; border-bottom:2px solid transparent; background:none; color:var(--muted); font-size:14px; cursor:pointer; }
+.wardrobe-categories button span { font-size:11px; color:var(--muted); }
+.wardrobe-categories button[aria-pressed="true"] { color:var(--ink); border-bottom-color:var(--ink); font-weight:600; }
+.wardrobe-categories button:focus-visible { outline:2px solid var(--ink); outline-offset:3px; }
+.wardrobe-page .wardrobe-rack > .closet-empty { width:100%; min-height:145px; flex:1; padding:28px 14px; }
+.wardrobe-rack-tools button:disabled { opacity:.35; cursor:default; }
+.wardrobe-scope { display:flex; align-items:center; flex-wrap:wrap; gap:12px; font-size:12px; }
+.wardrobe-scope select { padding:7px 26px 7px 10px; border:1px solid var(--line); border-radius:5px; background:var(--surface); color:var(--ink); }
+.wardrobe-rack-tools { display:flex; justify-content:flex-end; align-items:center; gap:20px; margin:8px 0; }
+.wardrobe-page .wardrobe-rack { display:flex; gap:14px; overflow-x:auto; overscroll-behavior-x:contain; padding:3px 2px 12px; scrollbar-width:thin; }
+.wardrobe-page .wardrobe-rack > .closet-card { flex:0 0 120px; min-width:0; }
+.wardrobe-page .wardrobe-rack .closet-photo { height:110px; aspect-ratio:auto; padding:8px; border-radius:6px; }
+.wardrobe-page .wardrobe-rack .closet-card-body { padding:8px 2px 0; }
+.wardrobe-page .wardrobe-rack .closet-card-body > .caption { display:none; }
+.wardrobe-page .wardrobe-rack .closet-card h3 { font-size:12px; line-height:1.4; }
+.wardrobe-page .wardrobe-rack-expanded { display:grid; grid-template-columns:repeat(auto-fill,minmax(115px,1fr)); max-height:340px; overflow-y:auto; }
+.wardrobe-page .mypage-inline-outfits { margin-top:12px; min-height:440px; padding-top:22px; }
+.wardrobe-page .mypage-inline-outfits .outfit-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
+.wardrobe-page .mypage-inline-outfits .outfit-photo { height:360px; aspect-ratio:auto; }
+.wardrobe-no-looks { grid-column:1/-1; padding:54px 0; color:var(--muted); font-size:14px; }
+@media(max-width:640px) {
+ .wardrobe-page .mypage-section-heading { flex-wrap:wrap; }
+ .wardrobe-scope { gap:8px; }
+ .wardrobe-categories { gap:4px 18px; margin-top:14px; }
+ .wardrobe-categories button { font-size:13px; }
+ .wardrobe-page .wardrobe-rack > .closet-card { flex-basis:96px; }
+ .wardrobe-page .wardrobe-rack .closet-photo { height:94px; }
+ .wardrobe-page .mypage-inline-outfits .outfit-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+ .wardrobe-page .mypage-inline-outfits .outfit-photo { height:260px; }
+}
+.discovery-heading { display:flex; justify-content:space-between; align-items:end; gap:28px; padding:42px 0 34px; border-bottom:1px solid var(--line); }
+.discovery-heading h1 { font-size:32px; font-weight:500; letter-spacing:-.05em; margin:6px 0 14px; }
+.discovery-heading .caption { margin:0; }
+.discovery-closet { font-size:13px; padding-bottom:5px; border-bottom:1px solid var(--ink); white-space:nowrap; }
+.discovery-closet span { margin-left:16px; }
+.discovery-toolbar { display:flex; align-items:center; justify-content:space-between; gap:16px; margin:28px 0; }
+.discovery-filters { display:flex; gap:24px; }
+.discovery-account { margin:20px 0; font-size:12px; color:var(--muted); }
+.discovery-account summary { cursor:pointer; width:fit-content; }
+.discovery-account form { display:flex; flex-wrap:wrap; align-items:end; gap:16px; padding:12px 0; }
+.discovery-account label { display:grid; gap:6px; color:var(--ink); }
+.discovery-account select { padding:8px 12px; border:1px solid var(--line); background:var(--surface); }
+.discovery-filters button { padding:0 0 5px; border:0; border-bottom:1px solid transparent; background:none; font-size:14px; color:var(--muted); cursor:pointer; }
+.discovery-filters button[aria-pressed="true"] { color:var(--ink); border-bottom-color:var(--ink); }
+.discovery-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:34px 22px; }
+.discovery-grid article { min-width:0; }
+.discovery-look { display:block; }
+.discovery-look:focus-visible { outline:2px solid var(--ink); outline-offset:5px; }
+.discovery-look .closet-photo { height:auto; aspect-ratio:3/4; padding:12px; }
+.discovery-look-caption { padding-top:12px; }
+.discovery-look-caption h2 { font-size:14px; font-weight:500; margin:0 0 4px; }
+.discovery-look-caption span { color:var(--muted); font-size:12px; }
+@media(max-width:900px) { .discovery-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+@media(max-width:640px) { .discovery-heading { display:block; padding:24px 0; } .discovery-heading h1 { font-size:26px; } .discovery-closet { display:inline-block; margin-top:24px; } .discovery-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:26px 14px; } .discovery-toolbar { flex-wrap:wrap; } .discovery-look .closet-photo { padding:8px; } }
