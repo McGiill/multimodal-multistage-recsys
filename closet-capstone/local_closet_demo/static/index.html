@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="ko">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>내 옷장 · 코디 발견</title><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head>
+<body>
+  <header class="site-header"><a class="brand" href="#closet">closet<span>.</span></a><nav aria-label="메인 메뉴"><a href="#closet">마이페이지 / 내 옷장</a><span class="demo-label">LOCAL DEMO</span></nav></header>
+  <main id="app" aria-live="polite"><div class="empty">옷장을 불러오는 중이에요…</div></main>
+  <footer class="site-footer"><span>내 옷에서 코디로, 코디에서 새로운 발견으로.</span><button class="text-button" id="about">데모 안내</button></footer>
+  <dialog id="picker" aria-labelledby="picker-title"><div class="dialog-head"><div><span class="eyebrow">DEMO WARDROBE</span><h2 id="picker-title">옷장에 상품 추가</h2></div><button class="close" data-close aria-label="닫기">×</button></div><p class="muted">기존 특징값이 있는 상품 100개 중에서 골라보세요.</p><label class="search-label">상품 검색<input type="search" id="picker-search" placeholder="상품명 또는 종류 검색"></label><div id="picker-grid" class="picker-grid"></div><p id="picker-status" role="status"></p></dialog>
+  <dialog id="product-dialog" aria-labelledby="product-title"><div class="dialog-head"><span class="eyebrow">PRODUCT DETAIL</span><button class="close" data-close aria-label="닫기">×</button></div><div id="product-body"></div></dialog>
+  <dialog id="about-dialog" aria-labelledby="about-title"><div class="dialog-head"><h2 id="about-title">이 데모에 연결된 데이터</h2><button class="close" data-close aria-label="닫기">×</button></div><div id="about-body"></div></dialog>
+  <div id="toast" role="status" hidden></div>
+</body>
+</html>

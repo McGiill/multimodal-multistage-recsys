@@ -1,0 +1,64 @@
+body:has(.moodboard[open]) { overflow:hidden; }
+.moodboard { --mood-red:#c91d2e; width:min(85vw,1320px); height:86dvh; max-width:none; max-height:none; margin:auto; padding:0; border:1px solid #ffffffa6; border-radius:22px; background:#faf9f7; color:#222; color-scheme:light; overflow:hidden; box-shadow:0 30px 100px #19131038; }
+.moodboard[open] { display:flex; flex-direction:column; }
+.moodboard::backdrop { background:#24211e38; backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); }
+.moodboard-top { display:flex; justify-content:space-between; align-items:center; flex-shrink:0; padding:10px 14px 6px 22px; }
+.moodboard-audience { display:flex; align-items:center; gap:10px; color:#6c665f; font-size:12px; }
+.moodboard-audience select { color:#282421; background:transparent; border:0; padding:6px; font-size:12px; }
+.moodboard-close { width:34px; height:34px; display:grid; place-items:center; border:0; border-radius:50%; background:transparent; color:#625d58; cursor:pointer; }
+.moodboard-close:hover { background:#ece9e5; }
+.moodboard-close:focus-visible { outline:2px solid #625d58; outline-offset:2px; }
+.moodboard-close svg { width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; }
+.moodboard-scroll { flex:1; min-height:0; overflow:auto; overscroll-behavior:contain; padding:0 22px; scrollbar-width:thin; scrollbar-color:#ccc5bf transparent; }
+.moodboard-wall { columns:5; column-gap:14px; }
+.moodboard-photo { display:block; position:relative; width:100%; break-inside:avoid; padding:8px; margin:0 0 14px; border:2px solid transparent; border-radius:12px; background:#eeeDEA; overflow:hidden; cursor:pointer; }
+.moodboard-photo img { display:block; width:100%; height:auto; aspect-ratio:3/4; object-fit:contain; user-select:none; }
+.moodboard-photo:nth-child(3n+2) img { aspect-ratio:3/3.5; }
+.moodboard-photo:nth-child(5n+3) img { aspect-ratio:3/4.4; }
+.moodboard-photo[aria-pressed="true"] { border-color:var(--mood-red); }
+.moodboard-photo:hover { border-color:#a79e98; }
+.moodboard-photo[aria-pressed="true"]:hover { border-color:var(--mood-red); }
+.moodboard-photo:focus-visible { outline:3px solid #222; outline-offset:3px; }
+.moodboard-check { position:absolute; top:10px; right:10px; width:28px; height:28px; border-radius:50%; background:var(--mood-red); display:none; align-items:center; justify-content:center; color:white; box-shadow:0 1px 4px #0002; }
+.moodboard-check svg { width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:2.7; stroke-linecap:round; stroke-linejoin:round; }
+.moodboard-photo[aria-pressed="true"] .moodboard-check { display:flex; }
+.moodboard-unavailable { position:absolute; inset:40% 12px auto; font-size:12px; color:#666; }
+.moodboard-more { text-align:center; padding:26px 0; }
+.moodboard-more button { border:0; border-bottom:1px solid #ccc; background:none; padding:10px 4px; font-size:13px; cursor:pointer; }
+.moodboard-more span { margin-left:22px; }
+.moodboard-dock { flex-shrink:0; background:#fff; border-top:1px solid #e3dfdb; padding:16px 24px; }
+.moodboard-dock-inner { max-width:1608px; margin:auto; display:flex; gap:28px; align-items:center; }
+.moodboard-count { font-size:16px; white-space:nowrap; }
+.moodboard-count strong { color:var(--mood-red); font-size:24px; font-weight:700; }
+.moodboard-selected { display:flex; gap:8px; }
+.moodboard-selected > * { width:46px; height:58px; border:0; border-radius:6px; background:#f1efec; }
+.moodboard-selected button { padding:3px; cursor:pointer; position:relative; }
+.moodboard-selected img { width:100%; height:100%; object-fit:contain; }
+.moodboard-selected button span { position:absolute; top:-5px; right:-4px; width:16px; height:16px; line-height:15px; background:#282421; color:white; border-radius:50%; font-size:12px; }
+.moodboard-selected:empty { display:none; }
+.moodboard-actions { display:flex; gap:26px; align-items:center; margin-left:auto; }
+.moodboard-skip { border:0; background:none; color:#79736c; font-size:13px; cursor:pointer; white-space:nowrap; }
+.moodboard-done { background:var(--mood-red); color:white; border:0; border-radius:28px; padding:15px 26px; font-size:15px; font-weight:600; cursor:pointer; white-space:nowrap; }
+.moodboard-done span { margin-left:16px; }
+.moodboard-done:disabled { background:#e8e3df; color:#9c938d; cursor:default; }
+.moodboard-status { max-width:1608px; margin:0 auto; font-size:12px; color:#a5222e; }
+.moodboard-status:not(:empty) { margin-top:8px; }
+@media(min-width:1600px) { .moodboard-wall { columns:6; } }
+@media(max-width:1100px) { .moodboard-wall { columns:4; } .moodboard-dock-inner { gap:18px; } }
+@media(max-width:800px) { .moodboard-wall { columns:3; } .moodboard-selected > * { width:35px; height:45px; } .moodboard-actions { gap:14px; } .moodboard-done { padding:13px 18px; } }
+@media(max-width:600px) {
+ .moodboard { width:94vw; height:88dvh; border-radius:16px; }
+ .moodboard-top { padding:7px 8px 5px; }
+ .moodboard-scroll { padding:0 12px; }
+ .moodboard-wall { columns:2; column-gap:10px; }
+ .moodboard-photo { padding:5px; margin-bottom:10px; border-radius:9px; }
+ .moodboard-check { top:7px; right:7px; width:24px; height:24px; }
+ .moodboard-dock { padding:12px 14px calc(12px + env(safe-area-inset-bottom)); }
+ .moodboard-dock-inner { flex-wrap:wrap; gap:12px 16px; }
+ .moodboard-selected { margin-left:auto; }
+ .moodboard-selected > * { width:32px; height:40px; }
+ .moodboard-actions { width:100%; justify-content:space-between; }
+ .moodboard-done { min-width:110px; }
+ .moodboard-count { font-size:13px; }
+ .moodboard-count strong { font-size:21px; }
+}

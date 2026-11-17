@@ -1,0 +1,61 @@
+{
+  "schema_version": "closet-preference-seed-v1",
+  "operation": "replace",
+  "user_id": "EXAMPLE_HANDOFF",
+  "event_type": "outfit_preference",
+  "status": "selected",
+  "selection_revision": 1,
+  "last_action_at": "2026-11-17T15:09:55.785283+00:00",
+  "selected_at": "2026-11-17T15:09:55.785283+00:00",
+  "selection_dataset_version": "pool-expanded-2026-11-17",
+  "dataset_version": "pool-expanded-2026-11-17",
+  "shopping_audience": "men",
+  "registration": {
+    "gender": "M",
+    "age_group": "20s"
+  },
+  "selected_outfit_ids": [
+    "musinsa_1262704062473641363"
+  ],
+  "effective_outfit_ids": [
+    "musinsa_1262704062473641363"
+  ],
+  "inactive_outfit_ids": [],
+  "retained_previous_selection": false,
+  "signal_strength": "weak",
+  "suggested_max_blend": 0.2,
+  "seed_products": [
+    {
+      "product_id": "hm_0620224001",
+      "source": "hm",
+      "source_article_id": "0620224001",
+      "relative_weight": 0.5,
+      "evidence": [
+        {
+          "outfit_id": "musinsa_1262704062473641363",
+          "garment_id": "musinsa_1262704062473641363_baseline_02",
+          "similarity": 0.7990458607673645,
+          "slot": "bottom",
+          "relation": "reviewed_alternative"
+        }
+      ]
+    },
+    {
+      "product_id": "hm_0759118001",
+      "source": "hm",
+      "source_article_id": "0759118001",
+      "relative_weight": 0.5,
+      "evidence": [
+        {
+          "outfit_id": "musinsa_1262704062473641363",
+          "garment_id": "musinsa_1262704062473641363_baseline_04",
+          "similarity": 0.71161288022995,
+          "slot": "top",
+          "relation": "anchor_match"
+        }
+      ]
+    }
+  ],
+  "model_applied": false,
+  "snapshot_id": "84d6329d241b4d58cc63c58caa81e77b5c10e2a8c19eab64404c6f10a75d2733"
+}
