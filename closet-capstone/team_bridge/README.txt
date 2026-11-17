@@ -1,3 +1,16 @@
+2026-11-18 최신 데이터: closet-demo-data-gender-five
+시연 상품 남성22/여성15, 각각 최소5코디. API 계약은 유지하며 dataset_version은 gender-five-2026-11-18.
+현재 모델 조건에 맞는 선택만 effective_outfit_ids/seed_products에 포함됩니다.
+시연 배정용 demo_cohorts는 가입 성별에 따라 준비된 옷장을 채우는 설정이며 학습 라벨이 아닙니다.
+
+원게시물 모델 조건 추가 (2026-11-18)
+최신 데이터는 closet-demo-data-publisher입니다.
+preference-seed의 publisher_model_filter: enabled, gender(MEN/WOMEN/null), label, source, metadata_version.
+effective_outfit_ids와 seed_products에는 현재 모델 조건을 통과한 선택만 포함됩니다.
+가입성별/검수버전이 바뀌면 snapshot_id도 바뀝니다. 이전선택은 selected_outfit_ids에 보존됩니다.
+의류 범위와 모델 정보는 별개이며 이 조건으로 개인 얼굴을 추론하지 않습니다.
+이 메타데이터는 코디 후보 필터입니다. 팀 상품 추천에는 별도의 상품 대상 필터를 적용하세요.
+
 콜드스타트 선택 → 추천 모델 전달 (2026-11-18)
 
 현재 구현된 범위

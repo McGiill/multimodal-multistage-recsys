@@ -13,7 +13,7 @@ def iso_time(value):
     return datetime.fromtimestamp(value, timezone.utc).isoformat() if value is not None else None
 
 
-def build_preference_seed(uid, profile, dataset_version, audience, eligible, links):
+def build_preference_seed(uid, profile, dataset_version, audience, eligible, links, model_context=None):
     survey = profile.get('survey', {})
     chosen = list(dict.fromkeys(survey.get('selected', [])))
     active = [oid for oid in chosen if eligible(oid, audience)]
@@ -49,6 +49,7 @@ def build_preference_seed(uid, profile, dataset_version, audience, eligible, lin
             for pid, weight in sorted(seeds.items(), key=lambda p:(-p[1],p[0]))
         ],
         'model_applied':False,
+        'publisher_model_filter':model_context,
     }
     # Same saved choices + context produce the same ID; consumers replace the
     # user's prior snapshot instead of counting GET/retries as new behavior.

@@ -102,6 +102,8 @@ def main():
             config = json.loads(config_path().read_text(encoding='utf-8'))
             compact = config.get('demo_mode') == 'curated_snapshot'
             test_file = {'reviewed_dataset':'test_reviewed_dataset.py',
+                         'gender_five_dataset':'test_gender_five_dataset.py',
+                         'publisher_dataset':'test_publisher_dataset.py',
                          'expanded_dataset':'test_expanded_dataset.py'}.get(config.get('test_suite'), 'test_compact.py') if compact else 'test_integration.py'
             tests = launch('local_closet_demo/shop_integration/' + test_file, capture=True)
             output, _ = tests.communicate()

@@ -21,6 +21,32 @@ const closetAudienceLabels = {all:'전체', men:'남성복', women:'여성복', 
 function closetAudienceOptions(value) {
   return ['men','women','unisex','all'].map(key => `<option value="${key}" ${value === key ? 'selected' : ''}>${closetAudienceLabels[key]}</option>`).join('');
 }
+function closetModelLabel(context) {
+  return context?.enabled ? `<span class="caption model-scope-label">${esc(context.label)}</span>` : '';
+}
+function closetRegistrationForm(data) {
+  if (!data.publisher_model_filter?.enabled) return '';
+  const info = data.registration || {};
+  const options = (items, value) => Object.entries(items).map(([key, label]) => `<option value="${key}" ${key === (value || 'unknown') ? 'selected' : ''}>${label}</option>`).join('');
+  return `<details class="discovery-account"><summary>회원 정보</summary><form data-registration-form>
+    <label>성별<select name="gender" aria-label="회원 성별">${options({unknown:'미입력', M:'남성', F:'여성'}, info.gender)}</select></label>
+    <label>연령대<select name="age_group" aria-label="회원 연령대">${options({unknown:'미입력', '10s':'10대', '20s':'20대', '30s':'30대', '40s':'40대', '50s':'50대', '60s+':'60대 이상'}, info.age_group)}</select></label>
+    <button class="text-btn" type="submit">저장</button><span role="status" data-registration-status></span>
+    </form><p>가입 성별에 맞는 모델의 코디를 보여줘요. 미입력 시 전체 모델을 보여줘요.</p></details>`;
+}
+function bindClosetRegistration(page, uid, refresh) {
+  const form = page.querySelector('[data-registration-form]');
+  if (!form) return;
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    const button = form.querySelector('button'); button.disabled = true;
+    try {
+      await post(closetUrl('registration', {}, uid), {gender:form.elements.gender.value, age_group:form.elements.age_group.value});
+      if (page.isConnected && state.userId === uid) await refresh();
+    } catch (error) { if (page.isConnected) form.querySelector('[data-registration-status]').textContent = error.message; }
+    finally { button.disabled = false; }
+  });
+}
 function closetPreferenceText(preference) {
   if (!preference?.ready) return '';
   if (preference.source === 'survey_selection') return '선택한 코디를 반영했어요';
@@ -30,9 +56,9 @@ function closetPreferenceText(preference) {
 function closetReturnLink() {
   return `<a class="link-btn" href="${esc(closetReturnHash)}">← ${closetReturnHash.startsWith('#/closet/outfit/') ? '코디 상세' : '내 옷장'}</a>`;
 }
-function closetCatalog() {
-  if (!closetCatalogPromise) closetCatalogPromise = api('/api/closet/catalog').catch(e => { closetCatalogPromise = null; throw e; });
-  return closetCatalogPromise;
+function closetCatalog(uid = state.userId) {
+  // Membership changes affect demo cohorts; do not share a cached catalog across users.
+  return api(closetUrl('catalog', {}, uid));
 }
 function closetUrl(path, values = {}, uid = state.userId) {
   return '/api/closet/' + path + '?' + new URLSearchParams({user_id: uid, ...values});
@@ -62,20 +88,22 @@ async function renderCloset() {
     if (!page.isConnected || state.userId !== uid) return;
     page.className = 'wardrobe-page';
     page.innerHTML = `
-      <div class="closet-heading mypage-heading"><h1>마이페이지</h1><a class="mypage-shop-link" href="#/">쇼핑 계속하기</a></div>
+      <div class="closet-heading mypage-heading"><h1>마이페이지</h1><a class="mypage-shop-link" href="#/discover">코디 둘러보기</a></div>
+      ${closetRegistrationForm(profile)}
       <div class="mypage-shell">
       <div class="mypage-content">
       <section data-mypage-panel="wardrobe" aria-labelledby="mypage-wardrobe-title">
-      <div class="mypage-section-heading"><div><h2 id="mypage-wardrobe-title">내 옷장</h2></div><div class="wardrobe-scope"><label for="wardrobe-audience">추천 범위</label><select id="wardrobe-audience">${closetAudienceOptions(profile.audience)}</select><button class="mypage-add-button" type="button" id="mypage-add">옷 추가</button></div></div>
+      <div class="mypage-section-heading"><div><h2 id="mypage-wardrobe-title">내 옷장</h2></div><div class="wardrobe-scope">${closetModelLabel(profile.publisher_model_filter)}<label for="wardrobe-audience">의류 범위</label><select id="wardrobe-audience">${closetAudienceOptions(profile.audience)}</select><button class="mypage-add-button" type="button" id="mypage-add">옷 추가</button></div></div>
       <div class="wardrobe-categories" role="group" aria-label="옷 종류">${Object.entries({all:'전체',...closetSlots}).map(([key,label]) => `<button type="button" data-wardrobe-category="${key}" aria-pressed="false" aria-controls="wardrobe-items" aria-label="${label}">${label}<span>${profile.products.filter(p => key === 'all' || p.slot === key).length}</span></button>`).join('')}</div>
       <div class="closet-toolbar mypage-filter"><span class="caption" data-slot="visible-count" role="status">전체 ${profile.products.length}개</span><div class="mypage-tools"><button type="button" class="link-btn" id="mypage-edit" aria-pressed="false">편집</button></div></div>
       <div class="wardrobe-rack-tools"><button type="button" class="link-btn" data-rack-expand aria-expanded="false">전체 보기</button><button type="button" class="link-btn" data-rack-shift="-1" aria-label="이전 옷">←</button><button type="button" class="link-btn" data-rack-shift="1" aria-label="다음 옷">→</button></div>
       <div class="closet-grid wardrobe-rack" id="wardrobe-items" data-slot="owned" aria-label="보유한 옷"></div>
       <details class="closet-add-panel" ${profile.products.length ? '' : 'open'}><summary>옷장에 상품 추가</summary><p class="caption">기존 상품 목록에서 보유한 옷을 선택하세요. 관심 표시와 보유 여부는 따로 저장해요.</p>
       <form id="closet-add-form"><label for="closet-add-select">추가할 상품</label><select id="closet-add-select">${catalog.products.filter(p => !profile.owned.includes(p.id)).map(p => `<option value="${esc(p.id)}">${esc(p.display_name)} · ${esc(p.color || p.category)}</option>`).join('')}</select><button class="primary" ${catalog.products.every(p => profile.owned.includes(p.id)) ? 'disabled' : ''}>옷장에 추가</button></form>
-      <button class="link-btn" type="button" id="closet-demo">시연 상품 ${catalog.demo_ids.length}개 담기</button> <button class="link-btn" type="button" data-closet-shoe-demo>신발 시연 상품 ${catalog.shoe_demo_ids.length}개 담기</button><button class="link-btn" type="button" data-closet-dress-demo>원피스 시연 상품 ${catalog.dress_demo_ids.length}개 담기</button><p class="caption">기존 옷장에 시연 상품을 추가합니다. 실제 구매 이력이 아닙니다.</p></details>
+      <button class="link-btn" type="button" id="closet-demo">시연 상품 ${catalog.demo_ids.length}개 담기</button> <button class="link-btn" type="button" data-closet-shoe-demo ${catalog.shoe_demo_ids.length ? '' : 'hidden'}>신발 시연 상품 ${catalog.shoe_demo_ids.length}개 담기</button><button class="link-btn" type="button" data-closet-dress-demo ${catalog.dress_demo_ids.length ? '' : 'hidden'}>원피스 시연 상품 ${catalog.dress_demo_ids.length}개 담기</button><p class="caption">기존 옷장에 시연 상품을 추가합니다. 실제 구매 이력이 아닙니다.</p></details>
       </section>
       </div></div><p class="caption closet-storage">옷장과 코디 조회 기록은 이 PC에 저장됩니다. 회원 선택은 로컬 시연용입니다.</p>`;
+    bindClosetRegistration(page, uid, renderCloset);
     page.querySelector('#mypage-add').addEventListener('click', () => {
       const panel = page.querySelector('.closet-add-panel');
       panel.open = true;
@@ -109,7 +137,7 @@ async function renderCloset() {
         const data = await api(closetUrl('outfits', {product_id:pid, mode:'curated', limit}, uid));
         if (!page.isConnected || state.userId !== uid || request !== outfitRequest) return;
         outfitPanel.innerHTML = `<div class="mypage-section-heading"><div><h2>${esc(closetName(data.product, catalog))} 코디</h2><p class="caption">${esc(closetAudienceLabels[data.audience])} · ${data.outfits.length}${data.has_more ? ' / ' + data.total_count : ''}개${data.outfits.length && data.personalization?.ready ? ' · ' + closetPreferenceText(data.personalization) : ''}</p></div><button type="button" class="link-btn" data-outfits-close>접기</button></div>
-          <div class="closet-grid outfit-grid">${data.outfits.map(o => `<article class="closet-card"><a class="mypage-outfit-select" data-closet-outfit="${esc(o.id)}" data-outfit-product="${esc(pid)}" href="#/closet/outfit/${encodeURIComponent(o.id)}?${new URLSearchParams({product_id:pid, mode:'curated', from:'mypage'})}" aria-label="${esc(o.title)} 자세히 보기">${closetPhoto(o.image, o.title, 'outfit-photo')}<div class="closet-card-body"><h3>${esc(o.title)}</h3><p class="caption">${esc([o.style_tag, {menswear:'남성복', womenswear:'여성복', unisex:'공용'}[o.clothing_audience]].filter(Boolean).join(' · '))}</p></div></a></article>`).join('') || `<p class="wardrobe-no-looks">이 옷에 연결된 ${esc(closetAudienceLabels[data.audience])} 코디는 아직 없어요. 다른 옷을 골라보세요.</p>`}</div>`;
+          <div class="closet-grid outfit-grid">${data.outfits.map(o => `<article class="closet-card"><a class="mypage-outfit-select" data-closet-outfit="${esc(o.id)}" data-outfit-product="${esc(pid)}" href="#/closet/outfit/${encodeURIComponent(o.id)}?${new URLSearchParams({product_id:pid, mode:'curated', from:'mypage'})}" aria-label="${esc(o.title)} 자세히 보기">${closetPhoto(o.image, o.title, 'outfit-photo')}<div class="closet-card-body"><h3>${esc(o.title)}</h3><p class="caption">${esc([o.style_tag, {menswear:'남성복', womenswear:'여성복', unisex:'공용'}[o.clothing_audience]].filter(Boolean).join(' · '))}</p></div></a></article>`).join('') || `<p class="wardrobe-no-looks">현재 모델·의류 범위에 맞는 코디는 아직 없어요. 다른 옷을 골라보세요.</p>`}</div>`;
         if (data.has_more) {
           const more = document.createElement('button');
           more.type = 'button'; more.className = 'link-btn'; more.textContent = '코디 더 보기';
@@ -161,7 +189,7 @@ async function renderCloset() {
         const content = `${closetPhoto(p.image, name)}<div class="closet-card-body"><p class="caption">${esc(closetSlots[p.slot] || p.category)}</p><h3>${esc(name)}</h3></div>`;
         return `<article class="closet-card">${p.can_recommend ? `<button type="button" class="mypage-product-select" data-closet-select="${esc(p.id)}" aria-controls="mypage-outfits" aria-pressed="${p.id === selectedId}" aria-label="${esc(name)} 선택">${content}</button>` : `${content}<p class="caption">코디 검색 준비 중</p>`}
         <button class="link-btn mypage-remove" type="button" data-closet-remove="${esc(p.id)}" ${editing ? '' : 'hidden'}>옷장에서 빼기</button></article>`;
-      }).join('') : `<div class="closet-empty"><h3>${filter === 'all' ? '옷장이 비어 있습니다' : `${closetSlots[filter]} 목록이 비어 있습니다`}</h3>${['shoes','dress'].includes(filter) ? `<button type="button" class="text-btn" data-closet-${filter === 'dress' ? 'dress' : 'shoe'}-demo>${closetSlots[filter]} 시연 상품 ${catalog[filter === 'dress' ? 'dress_demo_ids' : 'shoe_demo_ids'].length}개 담기</button>` : '<p>다른 종류의 옷을 둘러보거나 옷을 추가해 주세요.</p>'}</div>`;
+      }).join('') : `<div class="closet-empty"><h3>${filter === 'all' ? '옷장이 비어 있습니다' : `${closetSlots[filter]} 목록이 비어 있습니다`}</h3>${['shoes','dress'].includes(filter) && catalog[filter === 'dress' ? 'dress_demo_ids' : 'shoe_demo_ids'].length ? `<button type="button" class="text-btn" data-closet-${filter === 'dress' ? 'dress' : 'shoe'}-demo>${closetSlots[filter]} 시연 상품 ${catalog[filter === 'dress' ? 'dress_demo_ids' : 'shoe_demo_ids'].length}개 담기</button>` : '<p>다른 종류의 옷을 둘러보거나 옷을 추가해 주세요.</p>'}</div>`;
       slot(page, 'owned').scrollLeft = 0;
       page.querySelectorAll('[data-rack-shift], [data-rack-expand]').forEach(button => { button.disabled = products.length === 0; });
       if (selectedId && products.some(p => p.id === selectedId)) selectOutfits(selectedId, false);

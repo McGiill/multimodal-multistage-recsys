@@ -4,6 +4,7 @@ from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from runtime_paths import data_demo
+import publisher_models
 
 REVIEW = json.loads((data_demo() / 'shop_integration/audience_review/recheck/reviewed.json').read_text(encoding='utf-8'))
 REPLACEMENT_REVIEW = json.loads((data_demo() / 'replacement_extension.json').read_text(encoding='utf-8'))
@@ -17,16 +18,17 @@ LABELS = ('menswear', 'womenswear', 'unisex')
 def is_eligible(oid):
     row = REVIEW['outfits'].get(oid, {})
     return (row.get('status') == 'accepted' and row.get('age_review') == 'adult_presenting'
-            and row.get('audience') in LABELS)
+            and row.get('audience') in LABELS and publisher_models.verified(oid))
 
 
-def visible_survey(survey):
+def visible_survey(survey, profile=None):
     # Keep stored history intact; retired images no longer appear or influence ranking.
-    return {**survey, 'selected': [oid for oid in survey.get('selected', []) if is_eligible(oid)]}
+    return {**survey, 'selected': [oid for oid in survey.get('selected', []) if is_eligible(oid)
+            and publisher_models.matches(oid, profile)]}
 
 
 def visible_profile(profile):
-    return {**profile, **({'survey': visible_survey(profile['survey'])} if 'survey' in profile else {})}
+    return {**profile, **({'survey': visible_survey(profile['survey'], profile)} if 'survey' in profile else {})}
 
 
 def preferred_audience(profile):
@@ -45,6 +47,7 @@ def matches_audience(label, audience):
     return label in ({'men':'menswear', 'women':'womenswear'}[audience], 'unisex')
 
 
-def filter_outfits(outfits, audience):
+def filter_outfits(outfits, audience, profile=None):
     matches_audience('unknown', audience)  # Validate even when the list is empty.
-    return [o for o in outfits if is_eligible(o['id']) and matches_audience(AUDIENCES[o['id']], audience)]
+    return [o for o in outfits if is_eligible(o['id']) and matches_audience(AUDIENCES[o['id']], audience)
+            and publisher_models.matches(o['id'], profile)]

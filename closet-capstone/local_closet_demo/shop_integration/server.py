@@ -24,6 +24,7 @@ from store import ProfileStore
 from personalization import resolve_preferences, rerank_automatic
 from discovery import discover
 from preference_seed import build_preference_seed
+import publisher_models
 from audience import AUDIENCES, REVIEW, is_eligible, preferred_audience, filter_outfits, visible_survey, visible_profile
 
 HERE = Path(__file__).resolve().parent
@@ -83,15 +84,33 @@ if set(REVIEW['outfits']) != set(SELECTION['outfits']):
 ACTIVE_PRODUCTS = {pid: [oid for oid in entry['outfits'] if is_eligible(oid)]
                    for pid, entry in SELECTION['products'].items()}
 ACTIVE_PRODUCTS = {pid: oids for pid, oids in ACTIVE_PRODUCTS.items() if oids}
-ACTIVE_CONNECTIONS = [c for links in SELECTION['connections'].values()
+COHORTS = {}
+if CONFIG.get('demo_cohorts_file'):
+    import hashlib
+    raw = (DEMO / CONFIG['demo_cohorts_file']).read_bytes()
+    if hashlib.sha256(raw).hexdigest() != CONFIG.get('demo_cohorts_sha256'):
+        raise ValueError('Demo cohort checksum mismatch')
+    cohort_data = json.loads(raw)
+    COHORTS = cohort_data['products']
+    for pid, entry in COHORTS.items():
+        if entry['gender'] not in ('MEN', 'WOMEN') or pid not in ACTIVE_PRODUCTS:
+            raise ValueError('Invalid demo product cohort')
+        gender = 'M' if entry['gender'] == 'MEN' else 'F'
+        profile = {'registration': {'gender': gender}}
+        eligible = filter_outfits([{'id':oid} for oid in ACTIVE_PRODUCTS[pid]], preferred_audience(profile), profile)
+        if len({o['id'] for o in eligible}) < cohort_data['minimum_outfits']:
+            raise ValueError('Demo cohort has fewer than the required reviewed outfits: ' + pid)
+    ACTIVE_PRODUCTS = {pid: ACTIVE_PRODUCTS[pid] for pid in COHORTS}
+ACTIVE_CONNECTIONS = [c for pid, links in SELECTION['connections'].items() if pid in ACTIVE_PRODUCTS
                       for oid, c in links.items() if is_eligible(oid)]
+ACTIVE_OUTFITS = {oid for oids in ACTIVE_PRODUCTS.values() for oid in oids}
 DEMO_STATS = {
     'source_input_products': len(SELECTION['products']), 'source_outfit_images': len(SELECTION['outfits']),
     'input_products': len(ACTIVE_PRODUCTS),
     'product_outfit_connections': sum(map(len, ACTIVE_PRODUCTS.values())),
-    'unique_outfit_images': sum(is_eligible(oid) for oid in SELECTION['outfits']),
+    'unique_outfit_images': len(ACTIVE_OUTFITS),
     'excluded_outfit_images': sum(not is_eligible(oid) for oid in SELECTION['outfits']),
-    'audiences': dict(Counter(AUDIENCES[oid] for oid in SELECTION['outfits'] if is_eligible(oid))),
+    'audiences': dict(Counter(AUDIENCES[oid] for oid in ACTIVE_OUTFITS)),
     'reverse_product_connections': sum(len(c['products']) for c in ACTIVE_CONNECTIONS),
     'unique_reverse_products': len({p for c in ACTIVE_CONNECTIONS for p in c['products']}),
     'outfits_per_product': dict(Counter(str(len(oids)) for oids in ACTIVE_PRODUCTS.values())),
@@ -128,6 +147,11 @@ def catalog():
     return closet('/api/wardrobe')['products']
 
 
+def demo_ids(profile: dict | None = None) -> list[str]:
+    target = {'M': 'MEN', 'F': 'WOMEN'}.get((profile or {}).get('registration', {}).get('gender'))
+    return [pid for pid in ACTIVE_PRODUCTS if not COHORTS or target is None or COHORTS[pid]['gender'] == target]
+
+
 @lru_cache(maxsize=2048)
 def product(pid):
     item = closet('/api/products/' + quote(pid, safe=''))
@@ -146,8 +170,14 @@ def discovery_pool():
             pool.append({'id': oid, 'product_id': pid, 'image': '/media/outfit/' + oid,
                          'title': connection(SELECTION, pid, oid)['title'],
                          'style': TAGS.get(oid, {}).get('style', ''), 'slot': INPUT_SLOTS[pid],
-                         'audience': AUDIENCES.get(oid, 'unknown')})
+                         'audience': AUDIENCES.get(oid, 'unknown'),
+                         'publisher_model_gender':publisher_models.gender(oid)})
     return pool
+
+
+def user_preferences(store, uid, profile):
+    allowed_tags = {oid: tag for oid, tag in TAGS.items() if publisher_models.matches(oid, profile)}
+    return resolve_preferences(store, uid, allowed_tags)
 
 
 @lru_cache(maxsize=2048)
@@ -249,23 +279,29 @@ class Handler(BaseHTTPRequestHandler):
 
     def closet_request(self, path, params):
         if path == '/api/closet/catalog' and self.command == 'GET':
-            products = [{**p, 'display_name': SELECTION['products'].get(p['id'], {}).get('title', p['name'])} for p in catalog()]
-            return self.send({'products': products, 'demo_ids': list(ACTIVE_PRODUCTS),
-                              'shoe_demo_ids': [p for p in SHOES['products'] if p in ACTIVE_PRODUCTS],
-                              'dress_demo_ids': [p for p in DRESSES['products'] if p in ACTIVE_PRODUCTS], 'styles': STYLES,
-                              'demo_stats': DEMO_STATS})
+            uid = params.get('user_id', [''])[0]
+            profile = self.store.get(uid) if uid else None
+            ids = demo_ids(profile)
+            products = [{**p, 'display_name': SELECTION['products'].get(p['id'], {}).get('title', p['name'])}
+                        for p in catalog() if not COHORTS or p['id'] in ids]
+            return self.send({'products': products, 'demo_ids': ids,
+                              'shoe_demo_ids': [p for p in ids if INPUT_SLOTS[p] == 'shoes'],
+                              'dress_demo_ids': [p for p in ids if INPUT_SLOTS[p] == 'dress'], 'styles': STYLES,
+                              'demo_stats': DEMO_STATS, 'cohort_enabled': bool(COHORTS)})
         uid = params.get('user_id', [''])[0]
         self.store.validate_user(uid)
         if path == '/api/closet/preference-seed' and self.command == 'GET':
             profile=self.store.get(uid)
             return self.send(build_preference_seed(uid, profile, DATASET_VERSION, preferred_audience(profile),
-                lambda oid, scope: bool(filter_outfits([{'id':oid}], scope)), preference_links))
+                lambda oid, scope: bool(filter_outfits([{'id':oid}], scope, profile)), preference_links,
+                model_context=publisher_models.context(profile)))
         if path == '/api/closet/survey':
             if self.command == 'GET':
                 profile = self.store.get(uid)
                 audience = preferred_audience(profile)
-                return self.send({'outfits': discover(discovery_pool(), audience, {'weights':{}}, limit=len(SELECTION['outfits'])), 'audience':audience,
-                                  'survey': visible_survey(profile.get('survey', {'selected':[], 'completed':False})), 'max_picks':5})
+                return self.send({'outfits': discover(filter_outfits(discovery_pool(), 'all', profile), audience, {'weights':{}}, limit=len(SELECTION['outfits'])), 'audience':audience,
+                                  'publisher_model_filter':publisher_models.context(profile),
+                                  'survey': visible_survey(profile.get('survey', {'selected':[], 'completed':False}), profile), 'max_picks':5})
             if self.command == 'POST':
                 body = json.loads(self.body())
                 if not isinstance(body, dict):
@@ -277,15 +313,16 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError('코디를 1~5장 선택해 주세요.')
                 if any(oid not in SELECTION['outfits'] for oid in selected):
                     raise ValueError('지원하지 않는 코디입니다.')
-                if len(filter_outfits([{'id':oid} for oid in selected], preferred_audience(self.store.get(uid)))) != len(selected):
+                profile = self.store.get(uid)
+                if len(filter_outfits([{'id':oid} for oid in selected], preferred_audience(profile), profile)) != len(selected):
                     raise ValueError('현재 추천 범위의 코디를 선택해 주세요.')
                 survey = self.store.save_survey(uid, selected, skipped, dataset_version=DATASET_VERSION)
-                return self.send({'survey':visible_survey(survey),
+                return self.send({'survey':visible_survey(survey, profile),
                                   'preference_seed_url':'/api/closet/preference-seed?user_id=' + quote(uid, safe='')})
             return self.send({'detail':'지원하지 않는 요청입니다.'}, status=405)
         if path == '/api/closet/registration' and self.command == 'POST':
             profile = self.store.set_registration(uid, json.loads(self.body()))
-            return self.send({'registration': profile['registration'],
+            return self.send({'registration': profile['registration'], 'publisher_model_filter':publisher_models.context(profile),
                               'audience': profile.get('shopping_audience', {'F':'women', 'M':'men'}.get(profile['registration']['gender'], 'all'))})
         if path == '/api/closet/discover' and self.command == 'GET':
             profile = self.store.get(uid)
@@ -293,10 +330,10 @@ class Handler(BaseHTTPRequestHandler):
             default_audience = preferred_audience(profile)
             audience = params.get('audience', [default_audience])[0]
             views = self.store.recent_outfit_views(uid)
-            preference = resolve_preferences(self.store, uid, TAGS)
-            return self.send({'outfits': discover(discovery_pool(), audience, preference,
+            preference = user_preferences(self.store, uid, profile)
+            return self.send({'outfits': discover(filter_outfits(discovery_pool(), 'all', profile), audience, preference,
                                                  [v['outfit_id'] for v in views]),
-                              'audience': audience, 'personalization': preference,
+                              'audience': audience, 'personalization': preference, 'publisher_model_filter':publisher_models.context(profile),
                               'owned_count': len(profile['owned']), 'registration': account,
                               'source': 'reviewed_local_outfits', 'audience_tags': 'demo_clothing_review'})
         if path == '/api/closet/events' and self.command == 'POST':
@@ -306,7 +343,8 @@ class Handler(BaseHTTPRequestHandler):
             pid, oid = body.get('product_id'), body.get('outfit_id')
             if not isinstance(pid, str) or not isinstance(oid, str):
                 raise ValueError('상품과 코디를 확인해 주세요.')
-            if not filter_outfits([{'id': oid}], preferred_audience(self.store.get(uid))):
+            profile = self.store.get(uid)
+            if not filter_outfits([{'id': oid}], preferred_audience(profile), profile):
                 return self.send({'detail': '현재 추천 범위에서 제공하지 않는 코디입니다.'}, status=404)
             candidates = closet('/api/products/' + quote(pid, safe='') + '/outfits')['outfits']
             if not any(o['id'] == oid for o in candidates):
@@ -316,8 +354,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/api/closet/profile':
             if self.command == 'GET':
                 profile = self.store.get(uid)
-                preference = resolve_preferences(self.store, uid, TAGS)
-                return self.send({**visible_profile(profile), 'audience':preferred_audience(profile), 'personalization': preference, 'products': [product(pid) for pid in profile['owned']]})
+                preference = user_preferences(self.store, uid, profile)
+                return self.send({**visible_profile(profile), 'audience':preferred_audience(profile), 'publisher_model_filter':publisher_models.context(profile), 'personalization': preference, 'products': [product(pid) for pid in profile['owned']]})
             body = json.loads(self.body())
             action, values = body.get('action'), body.get('values')
             if not isinstance(values, list) or len(values) > 500 or not all(isinstance(v, str) for v in values):
@@ -342,13 +380,14 @@ class Handler(BaseHTTPRequestHandler):
                 data['outfits'] = [lookup[oid] for oid in SELECTION['products'][pid]['outfits'] if oid in lookup]
             audience = preferred_audience(profile)
             before_count = len(data['outfits'])
-            data['outfits'] = filter_outfits(data['outfits'], audience)
-            preference = resolve_preferences(self.store, uid, TAGS)
+            data['outfits'] = filter_outfits(data['outfits'], audience, profile)
+            preference = user_preferences(self.store, uid, profile)
             data['outfits'] = rerank_automatic(data['outfits'], TAGS, preference)
             for outfit in data['outfits']:
                 outfit['title'] = connection(SELECTION, pid, outfit['id']).get('title', outfit['style'])
                 outfit['style_tag'] = TAGS.get(outfit['id'], {}).get('style')
                 outfit['clothing_audience'] = AUDIENCES[outfit['id']]
+                outfit['publisher_model_gender'] = publisher_models.gender(outfit['id'])
             # Optional pagination is applied AFTER scope filtering and reranking.
             # Omitted limit preserves the API's complete reviewed-pool response.
             total_count = len(data['outfits'])
@@ -358,12 +397,12 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError('코디 표시 범위를 확인해 주세요.')
             data['outfits'] = data['outfits'][offset:offset+limit if limit is not None else None]
             return self.send({**data, 'curated': curated, 'supports_full_search': supports_full_search, 'styles': [], 'personalization': preference,
-                              'audience':audience, 'excluded_count':before_count - total_count,
+                              'audience':audience, 'publisher_model_filter':publisher_models.context(profile), 'excluded_count':before_count - total_count,
                               'total_count':total_count, 'offset':offset,
                               'has_more':offset + len(data['outfits']) < total_count})
         if path == '/api/closet/outfit':
             oid = params.get('outfit_id', [''])[0]
-            if not filter_outfits([{'id': oid}], preferred_audience(profile)):
+            if not filter_outfits([{'id': oid}], preferred_audience(profile), profile):
                 return self.send({'detail': '현재 추천 범위에서 제공하지 않는 코디입니다.'}, status=404)
             curated = not full and pid in SELECTION['products'] and oid in SELECTION['products'][pid]['outfits']
             limit = '&reverse_limit=' + str(SELECTION.get('reverse_candidate_limit', 4)) if curated else ''
@@ -379,7 +418,8 @@ class Handler(BaseHTTPRequestHandler):
             shoes = data.get('shoe_alternatives', [])
             data['shoe_alternatives_owned_count'] = sum(p['id'] in profile['owned'] for p in shoes)
             data['shoe_alternatives'] = [p for p in shoes if p['id'] not in profile['owned']]
-            return self.send({**data, 'title': selected.get('title', '코디 상세'), 'curated': curated})
+            return self.send({**data, 'title': selected.get('title', '코디 상세'), 'curated': curated,
+                              'publisher_model_gender':publisher_models.gender(oid)})
         return self.send({'detail': '찾을 수 없는 주소입니다.'}, status=404)
 
 

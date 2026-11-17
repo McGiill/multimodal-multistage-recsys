@@ -1,3 +1,20 @@
+2026-11-18 남녀별 최소5코디 구성
+shop_integration/server.py: 설정의 demo_cohorts.json 해시/성별/최소5개 검증; 회원별 시연 상품 목록 반환.
+shop/closet.js: 회원별 상품목록 요청. 공유 캐시 제거로 회원변경 직후에도 이전 성별 목록이 남지 않음.
+runtime_paths.py: cohort 파일 필수검사. run_demo.py: gender_five_dataset 테스트 선택.
+test_gender_five_dataset.py: 37상품 최소5코디와 유사상품/이미지/기록보존/취향seed 검증.
+코드 설정이 없는 이전 데이터는 기존 동작 유지. 신규 데이터의3상품은 과거 기록을 유지하며 시연목록만 교체.
+
+2026-11-18 원게시물 모델 정보 적용
+publisher_models.py: 설정에서 검수 메타데이터를 읽고 해시/204개ID/사진해시를 확인. 등록성별로 필터.
+audience.py: 의류 범위와 모델 필터를 별도로 적용. 제외2건은 항상 비활성.
+server.py: 취향조사/둘러보기/옷장/상세/선택저장/행동/취향export 전체에 동일 조건 적용.
+preference_seed.py: publisher_model_filter(성별/출처/메타데이터버전)를 전달하고 snapshot_id에 반영.
+closet.js/cold_start.js/moodboard.js: 가입정보 입력폼과 현재 모델 범위 표시, 의류 범위 명칭 구분.
+runtime_paths.py: 설정에 명시된 검수파일 필수검사. run_demo.py: publisher_dataset 테스트 선택.
+test_publisher_dataset.py: 신규9개 통합검사. 메타데이터 없는 이전묶음은 기존 동작 유지.
+publisher_model_review.json은 데이터 폴더에만 포함. 원게시물 실시간 요청/추론/모델 다운로드 없음.
+
 2026-11-18 변경
 shop/closet.js: 코디5개+더보기.
 shop_integration/server.py: 필터/정렬 후 limit/offset, 전체 취향사진 풀, preference-seed 조회 API.

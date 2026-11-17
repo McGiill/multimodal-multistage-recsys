@@ -55,7 +55,8 @@ def required_files(include_test_data=False):
         return p
     if cfg.get('demo_mode') == 'curated_snapshot':
         return [config, resolve(cfg['snapshot_file']), resolve(cfg['provenance_file']),
-                resolve(cfg['outfits_dir']) / 'queries.json'] + [
+                resolve(cfg['outfits_dir']) / 'queries.json'] + [resolve(cfg[key]) for key in
+                    ('publisher_model_review_file', 'demo_cohorts_file') if cfg.get(key)] + [
             demo / p for p in ['shoe_extension.json', 'dress_extension.json', 'replacement_extension.json',
                               'team_integration/closet_selection.json', 'team_integration/closet_tags.json',
                               'shop_integration/audience_review/recheck/reviewed.json']]

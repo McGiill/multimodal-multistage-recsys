@@ -5,10 +5,10 @@
   "event_type": "outfit_preference",
   "status": "selected",
   "selection_revision": 1,
-  "last_action_at": "2026-11-17T15:09:55.785283+00:00",
-  "selected_at": "2026-11-17T15:09:55.785283+00:00",
-  "selection_dataset_version": "pool-expanded-2026-11-17",
-  "dataset_version": "pool-expanded-2026-11-17",
+  "last_action_at": "2026-11-17T16:11:21.155877+00:00",
+  "selected_at": "2026-11-17T16:11:21.155877+00:00",
+  "selection_dataset_version": "publisher-filter-2026-11-18",
+  "dataset_version": "publisher-filter-2026-11-18",
   "shopping_audience": "men",
   "registration": {
     "gender": "M",
@@ -57,5 +57,12 @@
     }
   ],
   "model_applied": false,
-  "snapshot_id": "84d6329d241b4d58cc63c58caa81e77b5c10e2a8c19eab64404c6f10a75d2733"
+  "publisher_model_filter": {
+    "enabled": true,
+    "gender": "MEN",
+    "label": "남성 모델",
+    "source": "publisher.model.gender",
+    "metadata_version": "musinsa-publisher-2026-11-18"
+  },
+  "snapshot_id": "95bdc807040dabdb76cf81539a3286b1e89c59ec85f130cb0709d0fe82ae535b"
 }
