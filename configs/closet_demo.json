@@ -1,0 +1,7 @@
+{
+  "data_root": "data/closet-demo-data-60",
+  "state_dir": ".local/closet",
+  "retrieval_port": 8765,
+  "shop_port": 8767,
+  "team_url": "http://127.0.0.1:8000"
+}

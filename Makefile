@@ -64,3 +64,15 @@ lint:
 
 eval-rec:
 	python -m src.evaluation.eval_recommend
+
+# Closet/cold-start demo (existing recommendation train/test targets are unchanged).
+.PHONY: closet closet-check closet-test closet-unit
+DATA_ROOT ?= data/closet-demo-data-60
+closet:
+	python -m src.closet.run --data-root "$(DATA_ROOT)"
+closet-check:
+	python -m src.closet.run --data-root "$(DATA_ROOT)" --check --check-images
+closet-test:
+	python -m src.closet.run --data-root "$(DATA_ROOT)" --test
+closet-unit:
+	python -m unittest discover -s tests/closet/unit -t . -v

@@ -107,3 +107,12 @@ docs/           실험 리포트 · 아키텍처 · 팀 역할
 - `main` (보호) ← `dev` ← `feat/<영역>-<내용>` (예: `feat/search-clip`, `feat/rec-two-tower`)
 - PR 머지, 리뷰어는 `.github/CODEOWNERS` 로 자동 지정
 - `src/common/schemas.py` 변경은 팀 전원 리뷰
+
+## 옷장·콜드스타트
+
+최신 60상품 데모 코드는 `src/closet/`에 있습니다. [실행 및 변경 안내](docs/closet/README.md).
+
+```bash
+python -m pip install -r requirements/closet.txt
+python -m src.closet.run --data-root "../closet-demo-data-60"
+```
