@@ -22,3 +22,9 @@ artifacts/indexes/*
 .DS_Store
 .idea/
 .vscode/
+
+# Closet external data and local user state
+.local/
+data/closet-demo-data*/
+closet-demo-data*/
+*.sqlite3

@@ -1,0 +1,56 @@
+2026-11-20 추가 변경: 저장 신호가 로컬 추천과 seed API에 반영됩니다. 취소 시 저장 영향만 제거합니다.
+최신 규칙/검증은 SAVED_PREFERENCE_NOTES.txt 참고. 아래는 저장 기능 최초 구현 기록입니다.
+
+2026-11-20 코디 저장 기능
+
+사용 방법
+- 코디 창 또는 기존 코디 상세에서 '♡ 코디 저장'을 누릅니다.
+- 마이페이지 상단 '저장한 코디'를 누르면 저장 목록으로 이동합니다.
+- 저장한 사진을 누르면 코디와 유사상품을 다시 볼 수 있습니다.
+- '♥ 저장됨'을 다시 누르면 저장을 취소합니다. 코디 창과 목록 양쪽에서 가능합니다.
+- 동일 회원/동일 코디는 한 번만 보관합니다. 서로 다른 상품에서 같은 코디를 저장하면
+  사진은 중복되지 않고 마지막으로 지정한 상품 연결을 사용합니다.
+- 새로고침/서버 재실행 후에도 같은 --state-dir의 DB를 사용하면 유지됩니다.
+- 성별·추천 범위가 바뀌면 맞지 않는 저장 코디는 숨기고 기록은 유지합니다.
+- 원래 옷을 옷장에서 빼도 저장한 코디는 유지됩니다.
+
+API
+GET /api/closet/saved-outfits?user_id=<id>
+  outfits: 현재 범위에 유효한 저장 코디(최초 저장 시각 내림차순)
+  항목: id, outfit_id, product_id, saved_at, image, title, product, saved
+  total_count: 숨겨진 항목까지 포함한 전체 저장 수
+  hidden_count: 현재 성별/검수/상품연결 조건에서 숨긴 수
+POST /api/closet/saved-outfits?user_id=<id>
+  {"outfit_id":"musinsa_...", "product_id":"hm_...", "saved":true}
+  취소는 saved:false. 삭제된 옛 연결도 ID로 취소 가능.
+  존재하는 검수 연결과 현재 성별·의류 범위를 확인한 후 저장합니다.
+  결과: {"outfit_id":"...", "saved":true/false}
+GET /api/closet/outfit 응답에 saved:boolean 추가.
+
+저장 구조
+- 기존 profiles.sqlite3에 saved_outfits 테이블을 자동 생성합니다.
+- 기본키(user_id, outfit_id), product_id, saved_at을 저장합니다.
+- 다시 저장 요청해도 중복/저장시각 누적 없음. 회원별 데이터 분리.
+- 구매/상품조회/보유이력 또는 취향조사 seed로 자동 변환하지 않습니다.
+- 코디를 실제로 열면 기존 outfit_view 기록은 계속 남습니다.
+- 저장 신호의 Two-Tower 반영은 이번 범위에 포함하지 않습니다.
+- 로컬 시연용 사용자 ID를 사용하며 실제 서비스 인증을 추가한 기능은 아닙니다.
+
+확인 결과
+- 통합 테스트13개 통과(18.890초): 저장·중복방지·취소·회원분리·DB 재연결 유지,
+  성별 전환 시 숨김/복원, 잘못된 상품/코디/타입 거부, 취향 seed·프로필·조회이력 불변.
+- 기존60상품/코디/유사상품 회귀 검사 통과.
+- 브라우저: 저장 후 새로고침 유지, 목록 재열기, 서로 다른 상품 코디 전환,
+  창/목록 저장 취소 및 목록 갱신 확인. 오류 로그 없음.
+- 390x844에서 창과 저장 버튼이 가로 화면 안에 위치함을 확인. 뷰포트 복원.
+- 브라우저 테스트로 저장한2개는 취소하여 기존 저장 상태로 복원.
+- node --check closet.js 통과.
+
+실행/공유
+- 기존 closet-demo-data-60 데이터 폴더와 ZIP은 그대로 사용합니다.
+- github_upload/closet-capstone의 코드와 문서를 업데이트하면 됩니다.
+- 회원 DB, 테스트 DB 백업, 스크린샷은 GitHub 코드 묶음에 넣지 않았습니다.
+- 현재 실행 http://127.0.0.1:8967/shop/#/mypage
+- 실제 DB 변경 전 백업: local_closet_demo/saved_outfits_review/profiles-before-save-feature.sqlite3
+- 코드 파일: store.py, server.py, shop/closet.js, shop/closet.css, test_expanded60_dataset.py
+- GitHub 푸시/머지/배포 없음.

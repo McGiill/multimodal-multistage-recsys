@@ -1,0 +1,217 @@
+[
+  {
+    "source": "local_closet_demo/runtime_paths.py",
+    "target": "src/closet/runtime_paths.py",
+    "source_sha256": "35ba3900a5226d9b7a5b42b0de9eab9101690e86d11a8f12b620ec03fe704938"
+  },
+  {
+    "source": "local_closet_demo/compact_catalog.py",
+    "target": "src/closet/compact_catalog.py",
+    "source_sha256": "88e6797f237c4eaef20f4cf689d16258df8b8c8e862568c62e6997496c013c91"
+  },
+  {
+    "source": "local_closet_demo/server.py",
+    "target": "src/closet/retrieval.py",
+    "source_sha256": "ae1df79836ab4f728923124b8bf62a8317882ceeece3296e5b28fc52d07815eb"
+  },
+  {
+    "source": "local_closet_demo/team_integration/closet_selection_helpers.py",
+    "target": "src/closet/selection.py",
+    "source_sha256": "d77c3ed4385e26cd2480b60e5f7e07705ed2746a1fbadc8675baabe38cc91663"
+  },
+  {
+    "source": "local_closet_demo/shop_integration/store.py",
+    "target": "src/closet/shop/store.py",
+    "source_sha256": "1708889d26ba042f2b54194880cf4d32e7e74927024da23b92eccc46272ebd1b"
+  },
+  {
+    "source": "local_closet_demo/shop_integration/personalization.py",
+    "target": "src/closet/shop/personalization.py",
+    "source_sha256": "2122c6fef4b8d599a9042a2fd9c7cfdc8ff8df47c0d09f76644bdce0fccdc9ee"
+  },
+  {
+    "source": "local_closet_demo/shop_integration/discovery.py",
+    "target": "src/closet/shop/discovery.py",
+    "source_sha256": "b0410c88d3a8d814683a7a855dcd8e8129cb0d419c2a605db3d4592f41c31e73"
+  },
+  {
+    "source": "local_closet_demo/shop_integration/preference_seed.py",
+    "target": "src/closet/shop/preference_seed.py",
+    "source_sha256": "01fc184870275d729baeb3a889bcf5f6e5896604634e522a6163790d0f2043c0"
+  },
+  {
+    "source": "local_closet_demo/shop_integration/publisher_models.py",
+    "target": "src/closet/shop/publisher_models.py",
+    "source_sha256": "82ffb9cf0f90ebbb5c8f03f59087a08c64525f688241f8dbc928ff532ece0f5f"
+  },
+  {
+    "source": "local_closet_demo/shop_integration/audience.py",
+    "target": "src/closet/shop/audience.py",
+    "source_sha256": "b9a68a4ac5602866ccff0b2095be27843ccb213f928d908b0e2b4c316c363c20"
+  },
+  {
+    "source": "local_closet_demo/shop_integration/server.py",
+    "target": "src/closet/shop/server.py",
+    "source_sha256": "5df2bdc2bfa77524dc8563f9ad7ac49137f7529fb90b4fa7687a81138cd5417e"
+  },
+  {
+    "source": "local_closet_demo/shop_integration/shop/closet.css",
+    "target": "src/serving/shop/closet/closet.css",
+    "source_sha256": "466a28e74b01053f4eee994ca6e26f6ba0d846d5af90c12ccce3b11c3fcd68a6"
+  },
+  {
+    "source": "local_closet_demo/shop_integration/shop/closet.js",
+    "target": "src/serving/shop/closet/closet.js",
+    "source_sha256": "75eed0358b492b11754c2a2c9c933d91fb18f41feaa1ee938294897036f2d9a3"
+  },
+  {
+    "source": "local_closet_demo/shop_integration/shop/cold_start.js",
+    "target": "src/serving/shop/closet/cold_start.js",
+    "source_sha256": "b48b935e34cf73fd38857cc0212d47346802aa49b8af9197f19e1a235198ce5f"
+  },
+  {
+    "source": "local_closet_demo/shop_integration/shop/index.html",
+    "target": "src/serving/shop/closet/index.html",
+    "source_sha256": "4aa2539db832efdc6a617506fc741b2d51fe8f8a23f3c99d65cc5980e1c634f0"
+  },
+  {
+    "source": "local_closet_demo/shop_integration/shop/moodboard.css",
+    "target": "src/serving/shop/closet/moodboard.css",
+    "source_sha256": "dadc59867d9e27f26e2f5242650aa2ce409dd05ff8d9aaa808f7c1d38996ecb2"
+  },
+  {
+    "source": "local_closet_demo/shop_integration/shop/moodboard.js",
+    "target": "src/serving/shop/closet/moodboard.js",
+    "source_sha256": "229fe93b72d089173325e1db7d873109dd8ec2b9d0d0c5ed9f43e9ebf979c58b"
+  },
+  {
+    "source": "local_closet_demo/shop_integration/shop/shop.css",
+    "target": "src/serving/shop/closet/shop.css",
+    "source_sha256": "512d650c4c8afa99e4570d080e3ebe75476ebf66093f7a8518b27deca4bb7dbd"
+  },
+  {
+    "source": "local_closet_demo/shop_integration/shop/shop.js",
+    "target": "src/serving/shop/closet/shop.js",
+    "source_sha256": "0a8a469160d95c0d40a9137fc1aca449143792e1cdefd69d379df408fb5b5a84"
+  },
+  {
+    "source": "local_closet_demo/static/app.js",
+    "target": "src/serving/shop/closet_retrieval/app.js",
+    "source_sha256": "0e7939f3aa29a98e9d9ac6be3e2231425f9380b3139f0a9adc8811aef5fc9bc1"
+  },
+  {
+    "source": "local_closet_demo/static/index.html",
+    "target": "src/serving/shop/closet_retrieval/index.html",
+    "source_sha256": "353705d33d7b554aa98602aab697474d62c18935bf335445061581dd8f2ece34"
+  },
+  {
+    "source": "local_closet_demo/static/style.css",
+    "target": "src/serving/shop/closet_retrieval/style.css",
+    "source_sha256": "b58475932de3922c662d9aa6d37a4ebc79728896e29ffdebf07566e7d00976c1"
+  },
+  {
+    "source": "team_bridge/preference_adapter.py",
+    "target": "src/recommendation/preferences/adapter.py",
+    "source_sha256": "7254dba694257a50e8c98b937061ed550e681937cbe4bde4db5bd3395c44d594"
+  },
+  {
+    "source": "team_bridge/examples/preference_seed.example.json",
+    "target": "docs/closet/preference_seed.example.json",
+    "source_sha256": "39a199d3ca51afd59b64dd3a9d2e474e7abdf72cd5dcf8b4ecac7d6afe1814a9"
+  },
+  {
+    "source": "tests/test_catalog_portability.py",
+    "target": "tests/closet/unit/test_catalog_portability.py",
+    "source_sha256": "d7db003b878480b74694ffaf4cb412f4d712aebb152de212d46f52e4135c6c18"
+  },
+  {
+    "source": "tests/test_preference_adapter.py",
+    "target": "tests/closet/unit/test_preference_adapter.py",
+    "source_sha256": "85617ced6944adedb56efc4db770457de00b7ea36d0316a381ff07df82ac16a5"
+  },
+  {
+    "source": "tests/test_runtime_paths.py",
+    "target": "tests/closet/unit/test_runtime_paths.py",
+    "source_sha256": "c0b341355829e545b7c5f38055f54e434345dc3e22f9921ab1622c3635e3f73e"
+  },
+  {
+    "source": "tests/test_saved_preferences.py",
+    "target": "tests/closet/unit/test_saved_preferences.py",
+    "source_sha256": "ba60a69384f92f92e19f5061c4cccf7af371662ef451d96d642f93e13ed62b60"
+  },
+  {
+    "source": "local_closet_demo/shop_integration/test_compact.py",
+    "target": "tests/closet/integration/test_compact.py",
+    "source_sha256": "a9ba4e35d9fe36fbca988fe1d8e72f20929b19072cf13dbb4ccb30c70043efc0"
+  },
+  {
+    "source": "local_closet_demo/shop_integration/test_expanded60_dataset.py",
+    "target": "tests/closet/integration/test_expanded60_dataset.py",
+    "source_sha256": "cf4dd658ad15142866eca6dada4ccf83784682c57da59cc432eb27f5fc8612ad"
+  },
+  {
+    "source": "local_closet_demo/shop_integration/test_expanded_dataset.py",
+    "target": "tests/closet/integration/test_expanded_dataset.py",
+    "source_sha256": "2512aea23f47252a89ade01a41aac16fe8fd3b2d042ed98fe2ff2ef6678f2327"
+  },
+  {
+    "source": "local_closet_demo/shop_integration/test_gender_five_dataset.py",
+    "target": "tests/closet/integration/test_gender_five_dataset.py",
+    "source_sha256": "94a00d411c32eb9174ba1a0086b071810df049b010c5aebf7be3de84361f082e"
+  },
+  {
+    "source": "local_closet_demo/shop_integration/test_integration.py",
+    "target": "tests/closet/integration/test_integration.py",
+    "source_sha256": "88304694e8aec8c290b3e620993851d90981892569860dc40c1220d54a50e776"
+  },
+  {
+    "source": "local_closet_demo/shop_integration/test_publisher_dataset.py",
+    "target": "tests/closet/integration/test_publisher_dataset.py",
+    "source_sha256": "daa4946f0b5ce56d4e732ccba8f08c3fe47bd9dbc957f00121196ffbb779f304"
+  },
+  {
+    "source": "local_closet_demo/shop_integration/test_reviewed_dataset.py",
+    "target": "tests/closet/integration/test_reviewed_dataset.py",
+    "source_sha256": "beafd4fb7f3a7b1b91292fb5a2b83524eb8129ee35b40432af4d75c1e70b579d"
+  },
+  {
+    "source": "run_demo.py",
+    "target": "src/closet/run.py",
+    "source_sha256": "2a88d1aa91ebfb5e0d46ea4ca9e2ce479f598e544c6b6d0c776ee5fdc1290fa2"
+  },
+  {
+    "source": "build_compact_data.py",
+    "target": "src/closet/export_data.py",
+    "source_sha256": "5695b269d9a2dd9d82da27c7a661286d185bcd3a43808877be7505243648e041"
+  },
+  {
+    "source": "requirements.txt",
+    "target": "requirements/closet.txt",
+    "source_sha256": "99f43573522565d7c480efd1f954892948033915df6a4e685327e995d3396eb6"
+  },
+  {
+    "source": "SAVED_PREFERENCE_NOTES.txt",
+    "target": "docs/closet/history/SAVED_PREFERENCE_NOTES.txt",
+    "source_sha256": "24914106fc9a646ecff4ba23bb00c65bf2dcd0d807b3bd02b06cda9de0c659ec"
+  },
+  {
+    "source": "SAVED_OUTFITS_NOTES.txt",
+    "target": "docs/closet/history/SAVED_OUTFITS_NOTES.txt",
+    "source_sha256": "44c6d1a59ba180cd460da936e6e4b2747f998b9b68ec774d8118fd2543def178"
+  },
+  {
+    "source": "WARDROBE_FLOW_NOTES.txt",
+    "target": "docs/closet/history/WARDROBE_FLOW_NOTES.txt",
+    "source_sha256": "a98e3f344dbfc36055b1808214f857b0a7d183240fd6ff79e59f12a35a461cc1"
+  },
+  {
+    "source": "FINISH_NOTES.txt",
+    "target": "docs/closet/history/FINISH_NOTES.txt",
+    "source_sha256": "3816873889f032912cdc36c0a42ebfd15843717114009b61c0264049bccbfcc2"
+  },
+  {
+    "source": "team_bridge/README.txt",
+    "target": "docs/closet/preference_api.txt",
+    "source_sha256": "555aeea7578619b6385a74e68886bba8d499f28deb50c8b288c5928ed3d10a9a"
+  }
+]
