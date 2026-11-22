@@ -29,6 +29,7 @@ from src.recommendation.reranking.diversity import breaks_diversity
 from src.recommendation.reranking.items import Candidate, RerankedItem, RerankResult, dedupe_key
 from src.recommendation.reranking.mab import ExplorationPicker, MabConfig, build_explorer
 from src.recommendation.reranking.new_item import build_new_item_pool
+from src.recommendation.preferences.signal import PreferencePolicy, apply_preference_order
 
 # 위치 → (풀, reason, is_exploration)
 SlotPools = dict[int, tuple[list[Candidate], str, bool]]
@@ -140,6 +141,8 @@ class Reranker:
         trending: Sequence[Candidate] = (),
         new_item_pool: Sequence[Candidate] = (),
         top_n: int | None = None,
+        preference_weights: Mapping[str, float] | None = None,
+        preference_policy: PreferencePolicy | None = None,
     ) -> RerankResult:
         """최종 Top-N을 만든다.
 
@@ -161,6 +164,9 @@ class Reranker:
             main = interleave(popular, trending, cfg.popular_trending_ratio)
         else:
             main = sorted(candidates, key=lambda c: c.score, reverse=True)
+
+        if preference_weights and preference_policy is not None:
+            main = apply_preference_order(main, candidates, preference_weights, history_len, preference_policy)
 
         slot_pools = self._build_slot_pools(candidates, main, now, new_item_pool, n)
 

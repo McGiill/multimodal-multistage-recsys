@@ -20,6 +20,7 @@ services:
       REDIS_PORT: "6379"
       HF_HOME: /app/artifacts/models   # CLIP·검출 모델 가중치를 artifacts/models에 받고 재사용
       OMP_NUM_THREADS: "4"
+      CLOSET_PREFERENCE_URL: ${CLOSET_PREFERENCE_URL:-http://host.docker.internal:8767/api/closet/preference-seed}
     ports: ["${API_HOST_PORT:-8000}:8000"]
     volumes:
       - ./artifacts:/app/artifacts

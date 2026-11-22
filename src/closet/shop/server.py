@@ -354,9 +354,12 @@ class Handler(BaseHTTPRequestHandler):
                 if not isinstance(body, dict):
                     raise ValueError('선택한 코디를 확인해 주세요.')
                 selected, skipped = body.get('selected'), body.get('skipped', False)
+                clear = body.get('clear', False)
+                if not isinstance(clear, bool) or (clear and (selected != [] or skipped is not False)):
+                    raise ValueError('취향 초기화는 빈 선택과 함께 요청해 주세요.')
                 if not isinstance(skipped, bool) or not isinstance(selected, list) or not all(isinstance(oid, str) for oid in selected):
                     raise ValueError('선택한 코디를 확인해 주세요.')
-                if len(selected) > 5 or len(set(selected)) != len(selected) or (not skipped and not selected):
+                if len(selected) > 5 or len(set(selected)) != len(selected) or (not skipped and not selected and not clear):
                     raise ValueError('코디를 1~5장 선택해 주세요.')
                 if any(oid not in SELECTION['outfits'] for oid in selected):
                     raise ValueError('지원하지 않는 코디입니다.')

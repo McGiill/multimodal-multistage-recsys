@@ -4,6 +4,8 @@ import time
 from datetime import datetime, timezone
 
 import numpy as np
+from src.common.config import load_config
+from src.recommendation.preferences.signal import PreferencePolicy, eligible_weights
 
 from src.common.schemas import (
     PipelineLatency,
@@ -25,7 +27,8 @@ from src.serving.model_loader import get_recommendation_models
 
 @register("multistage")
 class MultiStageStrategy(RecommendStrategy):
-    def recommend(self, user_id, top_n, at=None, session_id=None, session_clicks=None):
+    def recommend(self, user_id, top_n, at=None, session_id=None, session_clicks=None,
+                  preference_weights=None):
         """session_clicks: 세션 클릭을 직접 넘길 때 (오프라인 평가·시뮬레이터). 없으면 session_id로 Feature Store 조회.
 
         최근 행동 반영 (configs/recommend.yaml session)
@@ -61,6 +64,19 @@ class MultiStageStrategy(RecommendStrategy):
             if scfg.blend_candidates:
                 pids = pids[:n_candidates]
             ids = np.array([store.pmap[p] for p in pids if p in store.pmap], dtype=np.int64)
+        # Explicit preference is separate from recent/session clicks and model state.
+        # Online router supplies a fresh snapshot; offline callers default to none.
+        preference_policy = None
+        active_preferences = {}
+        if preference_weights:
+            pref_cfg = load_config('outfit_preferences')
+            if pref_cfg['enabled']:
+                preference_policy = PreferencePolicy.from_config(pref_cfg)
+                if preference_policy.max_weight > 0:
+                    active_preferences = eligible_weights(preference_weights, store.pmap, store.created,
+                                                          now, preference_policy.candidate_limit)
+                    ids = np.asarray(list(dict.fromkeys([*ids.tolist(),
+                        *(store.pmap[pid] for pid in active_preferences)])), dtype=np.int64)
         candidate = time.perf_counter()
         scores = models.score(ids, state, now)
         ranked = time.perf_counter()
@@ -70,6 +86,8 @@ class MultiStageStrategy(RecommendStrategy):
         result = rerank.rerank(
             ids, scores, state, now, top_n,
             new_ids=new_ids, new_scores=models.score(new_ids, state, now),
+            preference_weights=active_preferences,
+            preference_policy=preference_policy,
         )
         rerank.record_shown(user_id, result)  # MAB 탐색 칸 노출 (클릭은 POST /api/events)
         reranked = time.perf_counter()

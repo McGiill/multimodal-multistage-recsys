@@ -1,0 +1,9 @@
+# Separate explicit preference context, never a view/cart/purchase event.
+# Only /api/recommend?use_outfit_preferences=true loads the current snapshot.
+enabled: true
+source_url: http://127.0.0.1:8767/api/closet/preference-seed
+timeout_seconds: 0.15
+max_response_bytes: 1000000
+candidate_limit: 32
+max_weight: 0.2          # Experimental bound, NOT 'one choice = N views'.
+history_decay: 5        # Decay by real history slots; never add synthetic history.
