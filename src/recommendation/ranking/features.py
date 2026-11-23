@@ -42,6 +42,11 @@ def split_info(root):
     """Use the team's published partitions without repartitioning any session."""
     root = Path(root)
     meta = json.loads((root / "splits/meta.json").read_text(encoding="utf-8-sig"))
+    if "cutoffs" in meta:  # CT snapshots retain exact session boundaries, including time of day.
+        cuts = [float(t) for t in meta["cutoffs"]]
+        if len(cuts) != 4 or not np.all(np.isfinite(cuts)) or not np.all(np.diff(cuts) > 0):
+            raise ValueError("Snapshot cutoffs must contain four increasing UTC timestamps")
+        return meta, cuts
     names = ["train", "valid", "test"]
     starts = [pd.Timestamp(meta["splits"][n]["from"], tz="UTC") for n in names]
     end = pd.Timestamp(meta["splits"]["test"]["to"], tz="UTC") + pd.Timedelta(days=1)
@@ -228,6 +233,15 @@ class FeatureStore:
         hi, lo = np.clip(d, 0, n), np.clip(d - days, 0, n)
         counts = self._view_cum[targets, hi] - self._view_cum[targets, lo]
         return np.minimum(np.log1p(counts) / 8, 1).astype(np.float32)
+
+    def view_counts(self, at, days=None):
+        """기록 기준 시각(frozen_split 규칙) 전날까지의 상품별 조회 수. days=None이면 처음부터. 길이 n+1 (0 = padding)."""
+        self.popularity(np.array([1]), np.array([float(at)]), days or 7)  # 일별 누적표 준비
+        d = int(np.floor(self.frozen_time(np.array([float(at)]))[0] / 86400)) - self._day0
+        n = self._view_cum.shape[1] - 1
+        hi = int(np.clip(d, 0, n))
+        lo = 0 if days is None else int(np.clip(d - days, 0, n))
+        return (self._view_cum[:, hi] - self._view_cum[:, lo]).astype(np.int64)
 
     def item_age(self, targets, times):
         """등록 후 경과일 → (min(log1p(일) / log1p(365), 1), 등록 7일 이내 여부)."""

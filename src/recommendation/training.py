@@ -13,6 +13,7 @@ import yaml
 
 from src.common.config import ROOT, data_dir, load_config
 from src.evaluation.metrics import auc
+from src.recommendation.candidate.image_features import load_image_features
 from src.recommendation.candidate.retriever import search_available
 from src.recommendation.candidate.two_tower import make_model as tower
 from src.recommendation.ranking.deepfm import make_model as ranker
@@ -113,13 +114,19 @@ def train_candidate(root, out, cfg):
     meta, cuts = split_info(root)
     print("Loading official split files and public features", flush=True)
     store = FeatureStore(root / "processed", cfg["candidate"]["history_len"]).fit(cuts[1])
+    source_root = Path(root).resolve()
+    # 저장소 안의 스냅샷은 호스트/Docker의 서로 다른 ROOT에서도 같은 데이터로 연결한다.
+    source_data_dir = str(source_root.relative_to(ROOT)) if source_root.is_relative_to(ROOT) else str(source_root)
     store.metadata.update(
         selection_cutoff=cuts[2], history_policy="frozen_split",
-        history_cutoffs=cuts[1:3], source_meta=meta,
+        history_cutoffs=cuts[1:3], source_meta=meta, source_data_dir=source_data_dir,
         timestamp_convention="naive source timestamps interpreted as UTC",
         source_events=store.audit["input_events"], data_audit=store.audit,
         objective=cfg["ranking"].get("objective", "cvr"),
     )
+    image_vectors, image_metadata = load_image_features(store.item_ids, cfg["candidate"].get("image_features", {}))
+    if image_metadata is not None:
+        store.metadata["image_features"] = image_metadata
     print("Data audit", store.audit, flush=True)
     store.excluded_events.to_parquet(out / "excluded_pre_signup_events.parquet", index=False)
     store.save(out / "features")
@@ -140,7 +147,7 @@ def train_candidate(root, out, cfg):
     c = cfg["candidate"]
     available_order = np.argsort(store.created[1:], kind="stable") + 1
     available_times = store.created[available_order]
-    model = tower(store, cfg)
+    model = tower(store, cfg, image_vectors=image_vectors)
     opt = torch.optim.Adam(model.parameters(), lr=c["lr"])
     best = -1.0
     best_state = None
@@ -196,10 +203,10 @@ def load_bundle(out):
     cfg = json.loads((out / "config.json").read_text(encoding="utf-8"))
     seed(cfg)
     store = FeatureStore.load(out / "features")
-    model = tower(store, cfg)
-    model.load_state_dict(
-        torch.load(out / "two_tower.pt", map_location="cpu", weights_only=True)
-    )
+    state = torch.load(out / "two_tower.pt", map_location="cpu", weights_only=True)
+    # 이미지 buffer는 checkpoint가 소유한다. 원본 검색 인덱스 변경·삭제와 무관하게 재현한다.
+    model = tower(store, cfg, image_vectors=state.get("image_vectors"))
+    model.load_state_dict(state)
     model.eval()
     return cfg, store, model
 

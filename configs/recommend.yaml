@@ -1,7 +1,11 @@
 seed: 42
-version: stage12-ctcvr-v20261110c  # Stage 2를 노출 후 구매(ctcvr) + 특징 v2로 다시 학습 (Stage 1은 v20261110b와 같음)
-                                   # 이전: stage12-ctr-v20261110b (클릭 예측) / stage12-cvr-v20261110-regen (1차 재생성)
-                                   #       / stage12-cvr-team-v20261022 (팀 모델)
+version: stage12-final-v20261122   # 선택용 묶음 (train만 학습). 서빙·test 평가는 refit 묶음 (<version>-refit, 아래 refit)
+                                   # 2026-11-22: v20261119와 Stage 1·2 동일, 최종 순위 모델만 카테고리 의도 특징(final_rank/context.py)
+                                   #   48개로 다시 학습 + 다양성 칸 4개. 이전 묶음은 그대로 둔다 (특징 이름으로 열을 골라 계속 동작)
+                                   # 2026-11-19: 사용자 단위 지표 기준으로 Stage 1 이력 50·인기/카테고리 보정, 최종 순위 모델,
+                                   #             다양성 칸, train+valid 재학습 추가 (노션 '지표 정의' 페이지)
+                                   # 이전: stage12-ctcvr-v20261110c (노출 후 구매 + 특징 v2) / stage12-ctr-v20261110b
+                                   #       / stage12-cvr-v20261110-regen / stage12-cvr-team-v20261022 (팀 모델)
 threads: 4
 validation_limit: 10000
 
@@ -11,11 +15,20 @@ candidate:
   embedding_dim: 64
   n_candidates: 300
   negative_ratio: 4       # 랜덤 네거티브 1:4
-  history_len: 20
-  epochs: 5
+  history_len: 50         # 이전 20. valid 마지막 2일 Recall@300 0.365 → 0.368 (2026-11-19 실험), DeepFM 이력 특징도 같은 길이
+  epochs: 10              # 이전 5. valid 조회 단위 Recall@300 0.290(5) → 0.295(9 epoch 최고)
   lr: 0.001
   batch_size: 1024
   faiss_index_type: hnsw
+  retrieval_prior:        # Stage 1 점수 = Two-Tower 내적 + 계수 × 항목 (candidate/prior.py, 내적 검색 그대로)
+    popularity: 0.3       #   최근 7일 조회 인기 (FeatureStore.popularity, 0~1)
+    category_l3: 0.1      #   그 고객 이력의 소분류 비율
+    category_l2: 0.1      #   그 고객 이력의 중분류 비율
+                          # valid 사용자 단위 Recall@300으로 고름 (0.289 → 0.299). 0 / 생략이면 Two-Tower만 (이전 동작)
+  image_features:
+    enabled: false        # 이미지 실험에서만 켠다. 기존 체크포인트/서빙과 호환 유지
+    embeddings_dir: artifacts/indexes/search/patrickjohncyh__fashion-clip
+    projection_dim: 32    # 고정 FashionCLIP 벡터 → 학습 가능한 projection → Item Tower
 
 ranking:
   objective: ctcvr        # 노출 후 구매 확률 (2026-11-10 결정): 보여준 상품 중 구매 = 1, 안 누름 + 눌렀지만 안 삼 = 0
@@ -45,6 +58,8 @@ session:
                           # false: 저장된 이력만 (이전 동작, 기존 평가 결과 재현용)
   blend_candidates: true  # 장기+세션 결합 점수(long_short_alpha) 상위 n_candidates개로 후보를 자른 뒤 DeepFM 정렬
                           # false: 결합 점수를 버리고 후보 전부를 DeepFM으로 정렬 (이전 동작)
+  final_score_weight: 0.2  # 최종 정렬: DeepFM·세션 코사인 각각 percentile로 맞춘 후 80:20 결합 (확률 아님)
+                          # 비교 실험: eval_pipeline --session-weight 0 / 0.2, 이미지 실험과 분리
   temperature: 0.1        # 학습 softmax 온도 (코사인 점수 → logit)
   epochs: 5
   lr: 0.001
@@ -52,7 +67,43 @@ session:
   eval_k: 20              # 다음 상품 맞히기 HitRate@k / MRR@k
   n_candidates: 50        # 세션 관심으로 Stage 1 후보에 추가할 상품 수
   interest_field: category_l2   # session_interest 라벨 (명세 예시: "아우터")
-  model_file: session_encoder_v20261110b.pt  # 이전: session_encoder_v20261110.pt (1차 재생성), session_encoder.pt (팀 모델)
+  model_file: session_encoder_v20261119.pt   # 이전: session_encoder_v20261110b.pt / v20261110.pt / session_encoder.pt (팀 모델)
+
+final_rank:               # 최종 순위 (src/recommendation/final_rank, 2026-11-19). Stage 2(DeepFM) 점수를 입력으로 쓰는 다음 단계
+  enabled: true           # false 또는 묶음에 final_ranker.pkl이 없으면 DeepFM 순서 (이전 동작)
+  pool_size: 1000         # Stage 1 상위 몇 개를 풀에 넣을지 (명세 Recall@300은 앞 300개로 잰다)
+  sources:                # 고객 이력의 상위 카테고리 기준 추가 후보 (final_rank/context.py)
+    top_l3: 5
+    top_l2: 3
+    top_g13: 5            # (고객층, 소분류) = 쇼핑몰 카테고리 화면 단위
+    catpop: 40
+    segpop: 100
+    taste_tail: 60
+    taste_tail_min_rank: 2000
+    pricelow: 15
+    l2pop: 30
+    g13pop: 40
+    g13cheap: 20
+    new_days: 7
+    g13_new_days: 14
+  training:               # valid 기간 고객 단위 정답(조회·장바구니·구매)으로 학습, 2겹 교차 → 서빙은 두 모델 평균
+    folds: 2
+    negatives: 400        # 고객마다 풀에서 정답 아닌 상품 400개 (seed 고정)
+    max_iter: 600
+    learning_rate: 0.05
+    max_leaf_nodes: 63
+    l2_regularization: 1.0
+  diversity:              # 전체 고객 단위 다양성 (reranking/aggregate.py) → Coverage
+    tail_share: 0.08      # 목록 끝 8%(50칸 중 4칸)만 다른 고객 목록에 덜 나온 상품 우선, 앞쪽은 순위 그대로
+    window: 1200          # 다양성 칸 후보 = 순위 상위 1,200개 안에서
+    penalty: 1.0          # 정렬 점수 = 순위 점수(1 → 0) - penalty × log(1 + 노출 횟수)
+                          # valid에서 Coverage ≥ 0.21을 만족하는 설정 중 NDCG 최대로 골랐다
+                          # 2026-11-22 (특징 48개): 3칸은 Coverage 0.207로 미달 → 4칸 (NDCG 0.0845, Coverage 0.214)
+
+refit:                    # 최종 서빙 묶음: train + valid 앞 N일로 Stage 1·2 다시 학습 (src/recommendation/refit.py)
+  enabled: true           # 서빙·평가가 <version><suffix> 묶음을 쓴다 (없으면 선택용 묶음)
+  valid_days_in_train: 7  # valid 9일 중 앞 7일 세션을 학습에, 남은 2일로 epoch 선택. test는 쓰지 않는다
+  suffix: -refit
 
 reranking:
   category_field: category_l2       # 다양성 기준 category_l1 | category_l2 | category_l3
@@ -66,7 +117,10 @@ reranking:
     trending_min_views: 3           # 최근 조회가 이보다 적으면 트렌딩 제외
     list_size: 100                  # 목록 길이 (top_n이 더 크면 top_n)
   new_item_days: 7
-  new_item_min_slots: 1             # 신규 상품 슬롯 개수 (위치는 Top-N 균등 분할로 자동 계산)
+  new_item_min_slots: 1             # 신규 상품 슬롯 개수 (위치는 slot_start 기준 자동 계산)
+  slot_start: 0.0                   # 신규·탐색 칸 위치: Top-N의 이 비율 지점부터 끝까지 균등 분할 (reranker.slot_positions)
+                                    #   0 = 목록 전체(기존) / 0.5 = 아래 절반 / 1 = 맨 끝부터
+                                    #   valid(2026-11-21, 교차 점수): 0.5·1은 NDCG +0.0003·+0.0002뿐, Coverage 0.209·0.206(< 0.21) → 0 유지
   mab:
     enabled: true                   # A/B 테스트 Control은 false
     algorithm: epsilon_greedy       # epsilon_greedy | ucb
@@ -74,7 +128,7 @@ reranking:
     epsilon: 0.1
     ctr_prior: [1, 2]               # Epsilon-Greedy 클릭률 보정 (클릭, 노출): 초반 운에 갇힘 방지
     ucb_c: 2.0
-    exploration_slots: 2            # 탐색 슬롯 개수 (명세: 1~2개, 위치는 자동 계산)
+    exploration_slots: 2            # 탐색 슬롯 개수 (명세: 1~2개, 위치는 slot_start 기준 자동 계산)
 
 default_top_n: 10
 final_eval_k: 50                    # 최종 평가 HitRate / NDCG @k (명세 k=50, src/evaluation/eval_pipeline.py)

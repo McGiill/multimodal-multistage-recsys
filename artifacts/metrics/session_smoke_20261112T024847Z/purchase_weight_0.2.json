@@ -1,0 +1,33 @@
+{
+  "k": 50,
+  "n_queries": 300,
+  "with_session": 204,
+  "target": "Purchased products attributed to an impression within 86400s; prediction at impression before click; complete observation window; purchase-positive impressions only",
+  "target_type": "purchase",
+  "targets": {},
+  "seed": 42,
+  "input_sha256": {
+    "/app/data/splits/test_events.parquet": "04c19d3c799f777df42af242afb7dfc88b69099f66a52ba5567178a006250d31",
+    "/app/data/splits/test_impressions.parquet": "33959b90cb0813e978e5249855b305e8719f5482c0c6dd198ec2baed53c52fba"
+  },
+  "model_version": "stage12-ctcvr-v20261110c",
+  "history_source": "explicit offline prefixes; no Redis reads",
+  "latency_scope": "in-process strategy only; excludes HTTP and Redis",
+  "session_weight": 0.2,
+  "session": {
+    "live_history": true,
+    "blend_candidates": true
+  },
+  "stage_chain": [
+    "multistage"
+  ],
+  "measured_at": "2026-11-12T02:50:11",
+  "multistage": {
+    "hit_rate": 0.07666666666666666,
+    "ndcg": 0.02121937317568093,
+    "coverage": 0.02192,
+    "latency_p95_ms": 27.909716700071385,
+    "passed": {}
+  },
+  "evaluated_query_sha256": "cbad54b9b7f57ade5314adf07f4b4ae39f99efdfbf3eee4731b397562b1aa581"
+}

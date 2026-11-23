@@ -98,6 +98,12 @@ class Impression(BaseModel):
     clicked_ids: list[str]               # 클릭한 순서
 
 
+class ImpressionRequest(Impression):
+    """클라이언트가 실제 표시한 목록. 추천 응답과 연결하면 반환 목록의 부분집합인지 검증."""
+
+    recommendation_id: str | None = None
+
+
 # ---------------------------------------------------------------------------
 # 검색 API  (POST /api/search) — 과제 필수 필드: search_type, results[], latency_ms, total_count
 # ---------------------------------------------------------------------------
@@ -208,3 +214,5 @@ class RecommendResponse(BaseModel):
     recommendations: list[RecommendationItem]
     pipeline_latency: PipelineLatency
     session_context: SessionContext
+    recommendation_id: str | None = None
+    model_version: str | None = None

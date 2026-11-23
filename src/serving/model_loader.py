@@ -9,15 +9,19 @@ import numpy as np
 import torch
 
 from src.common.config import ROOT, env, load_config
+from src.recommendation.candidate.prior import RetrievalPrior
 from src.recommendation.candidate.retriever import Retriever
+from src.recommendation.final_rank import FinalRankContext, FinalRanker
 from src.recommendation.ranking.deepfm import make_model
 from src.recommendation.ranking.features import rank_features
+from src.recommendation.runtime_config import serving_version
 from src.recommendation.training import load_bundle
 
 
 class RecommendationModels:
     def __init__(self, folder):
         folder = Path(folder)
+        self.folder = folder.resolve()
         self.cfg, self.store, self.tower = load_bundle(folder)
         self.index = faiss.deserialize_index(
             np.fromfile(folder / "items.faiss", dtype=np.uint8)
@@ -31,13 +35,19 @@ class RecommendationModels:
             raise ValueError("Index ID mismatch")
         self.objective = self.cfg["ranking"].get("objective", "cvr")  # ctcvr: 노출 후 구매, ctr: 클릭, cvr: 조회 후 구매
         self.features = self.cfg["ranking"].get("features", 1)  # 2: Two-Tower 취향 점수·인기·경과일 등 추가 (rank_features)
-        self.item_vectors = np.load(folder / "item_vectors.npy") if self.features >= 2 else None
+        self.item_vectors = np.load(folder / "item_vectors.npy")
         self.ranker = make_model(self.store, self.cfg)
         self.ranker.load_state_dict(
             torch.load(folder / f"ranking_{self.objective}.pt", map_location="cpu", weights_only=True)
         )
         self.ranker.eval()
-        self.retriever = Retriever(self.tower, self.index, self.store)
+        # Stage 1 검색 점수 보정 (candidate.retrieval_prior, 학습 때 설정을 묶음에 저장). 없는 이전 묶음은 Two-Tower만
+        self.retriever = Retriever(self.tower, self.index, self.store, self.item_vectors,
+                                   RetrievalPrior.from_config(self.cfg))
+        # 최종 순위 (final_rank): 묶음에 학습 결과가 있고 설정이 켜져 있을 때만. 없으면 DeepFM 순서 (이전 동작)
+        final_cfg = self.cfg.get("final_rank") or {}
+        self.final_ranker = FinalRanker.load(folder) if final_cfg.get("enabled", False) else None
+        self.final_context = FinalRankContext(self.store, self.item_vectors, final_cfg) if self.final_ranker else None
 
     @torch.inference_mode()
     def score(self, ids, state, at):
@@ -67,7 +77,13 @@ def get_recommendation_models():
     if override:
         return load_models(str(Path(override).resolve()))
     cfg = load_config("recommend")
-    version = env("MODEL_VERSION", cfg.get("version", "stage12-cvr-v1"))
-    if version == "latest":
-        version = cfg.get("version", "stage12-cvr-v1")
+    version = env("MODEL_VERSION") or serving_version(cfg)
+    if version in {"latest", "active"}:
+        from src.ct.registry import resolve_model_version
+        registered = resolve_model_version(version)
+        if registered is not None:
+            return load_models(str(registered.resolve()))
+        if version == "active":
+            raise FileNotFoundError("No validated active model in the registry")
+        version = serving_version(cfg)
     return load_models(str((ROOT / cfg["paths"]["model_dir"] / version).resolve()))

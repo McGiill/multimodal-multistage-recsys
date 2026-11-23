@@ -1,6 +1,10 @@
 seed: 42
 days: 30
 n_users_per_group: 5000
+start_at: null            # null이면 학습 선택 시점·기존 시뮬레이션 기간 이후. 재현할 때 결과의 start_at 사용
+top_n: 10
+max_screens_per_visit: 3  # 추천 영역만 비교. 검색/둘러보기로 이동하면 해당 실험 방문 종료
+history_len: 20
 groups:
   control: popularity
   treatment: multistage
