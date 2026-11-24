@@ -125,5 +125,12 @@ def evaluate(folder):
 
 
 if __name__ == "__main__":
-    _, out, _ = arguments()
+    import sys
+
+    from src.common.config import ROOT
+    from src.recommendation.runtime_config import serving_version
+
+    _, out, cfg = arguments()
+    if "--output" not in sys.argv:  # 기본은 서빙 묶음 (refit이 있으면 재학습 묶음)
+        out = ROOT / cfg["paths"]["model_dir"] / serving_version(cfg)
     print(json.dumps(evaluate(out), indent=2))

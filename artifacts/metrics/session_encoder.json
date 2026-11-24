@@ -8,6 +8,7 @@
     "long_short_alpha": 0.6,
     "live_history": true,
     "blend_candidates": true,
+    "final_score_weight": 0.2,
     "temperature": 0.1,
     "epochs": 5,
     "lr": 0.001,
@@ -15,7 +16,7 @@
     "eval_k": 20,
     "n_candidates": 50,
     "interest_field": "category_l2",
-    "model_file": "session_encoder_v20261110b.pt",
+    "model_file": "session_encoder_v20261119.pt",
     "seed": 42
   },
   "train_examples": 357915,

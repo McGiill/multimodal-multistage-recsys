@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime, timezone
+from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import threading
@@ -76,28 +77,38 @@ def system(monkeypatch):
     observations = []
 
     class Retriever:
-        def retrieve(self, user_id, n, at, recent=None):
+        def retrieve(self, user_id, n, at, recent=None, allowed=None):
             h = np.zeros(20, dtype=np.int64)
             real = histories.get(user_id, []) + list(recent or [])
             h[:min(20,len(real))] = real[-20:]
             state = (h, max(1,len(real[-20:])), np.zeros(4))
             observations.append((user_id, deepcopy(state)))
-            return np.arange(1,21), np.linspace(1,0,20), state
+            ids = np.arange(1,21)
+            if allowed is not None:
+                ids = ids[allowed[ids]]
+            return ids, np.linspace(1,0,len(ids)), state
 
     def score(ids, state, now):
         return 1 / (np.asarray(ids, dtype=np.float32) + 1)
 
     models = SimpleNamespace(store=store, cfg={'candidate':{'n_candidates':20}},
-                             retriever=Retriever(), score=score)
+                             retriever=Retriever(), score=score, objective="cvr", folder=Path("test-model"))
     cfg = RerankConfig(top_n=10, new_item_slots=0, exploration_enabled=False)
     svc = RerankService(PIDS, products, cfg)
-    svc.cold_start_lists = lambda now, k: (svc.candidates(range(1,21), np.linspace(1,.1,20),'popular'), [])
+    svc.cold_start_lists = lambda now, k, allowed=None: (svc.candidates(range(1,21), np.linspace(1,.1,20),'popular'), [])
     last_results = []
-    svc.record_shown = lambda uid, result: last_results.append(result)
+    original_rerank = svc.rerank
+    def capture(*args, **kwargs):
+        result = original_rerank(*args, **kwargs)
+        last_results.append(result)
+        return result
+    svc.rerank = capture
+    monkeypatch.setattr(recommend,'get_recommendation_models',lambda:models)
+    monkeypatch.setattr(recommend,'get_rerank_service',lambda _:svc)
     monkeypatch.setattr(pipeline,'get_recommendation_models',lambda:models)
     monkeypatch.setattr(pipeline,'get_rerank_service',lambda _:svc)
     monkeypatch.setattr(pipeline,'get_feature_store',lambda:features)
-    monkeypatch.setattr(pipeline,'get_session_model',lambda:None)
+    monkeypatch.setattr(pipeline,'get_session_model',lambda *args:None)
     monkeypatch.setattr(events,'get_feature_store',lambda:features)
     monkeypatch.setattr(events,'record_exploration_click',lambda *args:None)
     app = FastAPI()
@@ -264,6 +275,7 @@ def test_diversity_new_and_exploration_rules_still_apply(system):
 def test_model_missing_is_still_503_not_fake_recommendation(system, monkeypatch):
     def missing(): raise FileNotFoundError('model missing')
     monkeypatch.setattr(pipeline,'get_recommendation_models',missing)
+    monkeypatch.setattr(recommend,'get_recommendation_models',missing)
     response=request(system,enabled=False)
     assert response.status_code==503
 
@@ -273,3 +285,55 @@ def test_timeout_and_invalid_body_fall_back(monkeypatch):
         def open(self,*args,**kwargs): raise TimeoutError()
     monkeypatch.setattr(transport,'build_opener',lambda *args:Opener())
     assert transport.fetch_outfit_preferences('A')==({},'unavailable')
+
+
+@pytest.mark.parametrize('final_rank', [False, True])
+def test_preference_survives_both_paths_without_bypassing_audience(system, monkeypatch, final_rank):
+    """Both main's GBDT route and its legacy route retain the explicit signal."""
+    models = system.models
+    models.store.products.loc[39, 'category_l1'] = 'Ladieswear'
+    if final_rank:
+        models.final_ranker = object()
+        models.final_context = SimpleNamespace(pool_size=20)
+        def query(uid, now, recent=None):
+            _, _, state = models.retriever.retrieve(uid, 20, now, recent)
+            return np.ones((1, 2)), state
+        models.retriever.user_query = query
+        models.retriever.search = lambda *args, **kwargs: (np.arange(1, 21), np.ones(20))
+        def score_pool(models, ctx, ranker, uid, now, q, state, stage1, allowed, extra):
+            pool = np.unique(np.r_[stage1, extra]).astype(np.int64)
+            if allowed is not None:
+                pool = pool[allowed[pool]]
+            return pool, models.score(pool, state, now), None, {}
+        monkeypatch.setattr(pipeline, 'score_pool', score_pool)
+    strategy = pipeline.MultiStageStrategy()
+    def run(weights, audience='all'):
+        # Reset cross-request diversity counters so cancellation compares like-for-like.
+        system.svc.exposure[:] = 0
+        return strategy.recommend('A', 10, at=NOW, session_clicks=[], audience=audience,
+                                  preference_weights=weights)
+    baseline = run({})
+    selected = run({PIDS[-1]:1})
+    item = next(r for r in selected.recommendations if r.product_id == PIDS[-1])
+    assert item.reason == 'outfit_preference' and item.score >= 0
+    assert PIDS[-1] not in [r.product_id for r in baseline.recommendations]
+    excluded = run({PIDS[-1]:1}, 'men')
+    assert PIDS[-1] not in [r.product_id for r in excluded.recommendations]
+    assert run({}).recommendations == baseline.recommendations
+    assert run({'missing':.5, PIDS[38]:.5}).recommendations == baseline.recommendations
+    assert all(history_count(state) == 0 for _, state in system.observations)
+    assert system.features.get_recent_views('A') == []
+
+
+def test_preference_keeps_recommendation_identity_without_fake_events(system, source):
+    from src.serving.event_log import get_event_log
+    source.profiles.save_survey('A', ['look1'], False, dataset_version='test')
+    response = request(system)
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload['recommendation_id'] and payload['model_version'] == 'test-model'
+    journal = get_event_log()
+    assert journal.metrics()['events'] == journal.metrics()['impressions'] == 0
+    with journal.connect() as con:
+        assert con.execute('SELECT COUNT(*) FROM recommendations').fetchone()[0] == 1
+    assert journal.feedback_counts() == {}

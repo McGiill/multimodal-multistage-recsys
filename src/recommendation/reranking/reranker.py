@@ -6,7 +6,8 @@ Stage 2가 점수를 매긴 후보를 받아 최종 Top-N을 만든다.
   1. cold-start 판단: 이력이 min_history 미만이면 메인 목록을 인기+트렌딩으로 교체
      (이력 = 저장된 조회 + 최근 조회. session.live_history가 false면 저장된 조회만: pipeline.py)
   2. 메인 목록 정렬 (Stage 2 점수 내림차순)
-  3. 슬롯 위치 계산: 설정에는 개수만 있고, 위치는 Top-N을 균등하게 나눈 지점 (slot_positions)
+  3. 슬롯 위치 계산: 설정에는 개수와 시작 비율(slot_start)만 있고, 위치는 Top-N의 slot_start 지점부터
+     끝까지를 균등하게 나눈 지점 (slot_positions. 0이면 목록 전체, 1이면 맨 끝부터)
   4. 위치별 채우기: 슬롯 위치(신규 상품, 탐색)는 해당 풀에서 먼저 고르고,
      나머지 위치는 메인 목록에서 고른다.
   5. 모든 위치에서 다양성 규칙을 함께 검사한다.
@@ -58,6 +59,7 @@ class RerankConfig:
 
     exploration_enabled: bool = True  # A/B 테스트 Control은 False
     exploration_slots: int = 2        # 개수 (명세: 1~2개)
+    slot_start: float = 0.0           # 신규·탐색 칸 위치 시작 비율. 0 = 목록 전체 균등(기존), 0.5 = 아래 절반, 1 = 맨 끝
     mab: MabConfig = field(default_factory=MabConfig)  # 기본 탐색 선택기 설정
 
     def __post_init__(self) -> None:
@@ -69,6 +71,8 @@ class RerankConfig:
             raise ValueError("max_consecutive는 1 이상이어야 함")
         if self.new_item_slots < 0 or self.exploration_slots < 0:
             raise ValueError("슬롯 개수는 0 이상이어야 함")
+        if not 0.0 <= self.slot_start <= 1.0:
+            raise ValueError("slot_start는 0~1 사이여야 함")
 
     @classmethod
     def from_recommend_config(cls, raw: Mapping[str, Any] | None = None) -> RerankConfig:
@@ -88,21 +92,29 @@ class RerankConfig:
             new_item_slots=r["new_item_min_slots"],
             exploration_enabled=mab.get("enabled", True),
             exploration_slots=mab["exploration_slots"],
+            slot_start=float(r.get("slot_start", 0.0)),
             mab=MabConfig.from_recommend_config(raw),
         )
 
 
-def slot_positions(top_n: int, n_new: int, n_exp: int) -> tuple[list[int], list[int]]:
-    """슬롯 개수 → 0-based 위치. Top-N을 (개수+1) 등분한 지점에 배치한다.
+def slot_positions(top_n: int, n_new: int, n_exp: int, start: float = 0.0) -> tuple[list[int], list[int]]:
+    """슬롯 개수 → 0-based 위치. Top-N의 start 비율 지점부터 끝까지를 (개수+1) 등분한 지점에 배치한다.
 
-    예) top_n=10, 신규 1개 → [5], 탐색 2개 → [3, 7].
+    예) top_n=10, 신규 1개, 탐색 2개
+        start=0 (목록 전체, 기존): 신규 [5], 탐색 [3, 7]
+        start=0.5 (아래 절반 5~9): 신규 [8], 탐색 [7, 9]
+        start=1 (맨 끝부터): 신규 [9], 탐색 [8, 7]
     신규 상품을 먼저 놓고, 탐색 위치가 겹치면 다음 빈 칸(없으면 앞쪽 빈 칸)으로 민다.
     빈 칸이 모자라면 남는 슬롯은 버린다.
     """
+    if top_n <= 0:
+        return [], []
     taken: set[int] = set()
+    begin = min(top_n, int(top_n * start + 0.5))
+    span = top_n - begin
 
     def spread(k: int) -> list[int]:
-        return [min(top_n - 1, int(top_n * (i + 1) / (k + 1) + 0.5)) for i in range(k)]
+        return [min(top_n - 1, begin + int(span * (i + 1) / (k + 1) + 0.5)) for i in range(k)]
 
     def place(targets: list[int]) -> list[int]:
         out: list[int] = []
@@ -114,8 +126,6 @@ def slot_positions(top_n: int, n_new: int, n_exp: int) -> tuple[list[int], list[
                     break
         return out
 
-    if top_n <= 0:
-        return [], []
     new_pos = place(spread(n_new))
     exp_pos = place(spread(n_exp))
     return new_pos, exp_pos
@@ -216,7 +226,7 @@ class Reranker:
     ) -> SlotPools:
         cfg = self.config
         n_exp = cfg.exploration_slots if cfg.exploration_enabled else 0
-        new_pos, exp_pos = slot_positions(top_n, cfg.new_item_slots, n_exp)
+        new_pos, exp_pos = slot_positions(top_n, cfg.new_item_slots, n_exp, cfg.slot_start)
         pools: SlotPools = {}
 
         if new_pos:

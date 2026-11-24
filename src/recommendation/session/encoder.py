@@ -47,6 +47,7 @@ class SessionConfig:
     long_short_alpha: float = 0.6
     live_history: bool = True       # 최근 조회를 User Tower·DeepFM 이력에 붙임 (pipeline.py)
     blend_candidates: bool = True   # 결합 점수 상위 n_candidates개로 후보를 자름 (pipeline.py)
+    final_score_weight: float = 0.0  # 이전 체크포인트 호환. 런타임 설정은 recommend.yaml
     temperature: float = 0.1
     epochs: int = 5
     lr: float = 0.001
@@ -62,6 +63,8 @@ class SessionConfig:
             raise ValueError(f"지원하지 않는 세션 인코더: {self.encoder} (가능: {sorted(ENCODERS)})")
         if not 0.0 <= self.long_short_alpha <= 1.0:
             raise ValueError("long_short_alpha는 0~1 사이여야 함")
+        if not 0.0 <= self.final_score_weight <= 1.0:
+            raise ValueError("final_score_weight는 0~1 사이여야 함")
         if self.max_len < 1 or self.min_len < 2:
             raise ValueError("max_len >= 1, min_len >= 2 여야 함")
         if self.temperature <= 0:
@@ -275,10 +278,10 @@ class SessionModel:
         return [ids[i] for i in order], combined[order]
 
 
-@lru_cache(maxsize=1)
-def get_session_model() -> SessionModel | None:
+@lru_cache(maxsize=4)
+def get_session_model(path: str | None = None) -> SessionModel | None:
     """서빙용 세션 인코더 (서버에서 한 번 로딩). 학습 파일이 없으면 None → Stage 1 후보를 그대로 쓴다."""
-    path = model_path()
+    path = Path(path) if path is not None else model_path()
     if not path.exists():
         print(f"[session] 세션 인코더 없음 ({path}) → python -m src.recommendation.session.train", flush=True)
         return None

@@ -21,6 +21,9 @@ services:
       HF_HOME: /app/artifacts/models   # CLIP·검출 모델 가중치를 artifacts/models에 받고 재사용
       OMP_NUM_THREADS: "4"
       CLOSET_PREFERENCE_URL: ${CLOSET_PREFERENCE_URL:-http://host.docker.internal:8767/api/closet/preference-seed}
+      OPENBLAS_NUM_THREADS: "1"
+      EVENT_LOG_PATH: /app/artifacts/runtime/events.sqlite3
+      MODEL_VERSION: ${MODEL_VERSION:-latest}
     ports: ["${API_HOST_PORT:-8000}:8000"]
     volumes:
       - ./artifacts:/app/artifacts
@@ -34,7 +37,7 @@ services:
       retries: 5
       start_period: 180s               # 시작할 때 CLIP 모델과 인덱스를 불러온다
     cpus: 4                            # 명세 최소 사양 (CPU 4코어) 기준으로 응답시간을 맞춘다
-    mem_limit: 4g
+    mem_limit: 16g
 
   dashboard:
     build: { context: ., dockerfile: docker/dashboard.Dockerfile }
@@ -59,8 +62,39 @@ services:
     container_name: simulator
     environment:
       API_BASE_URL: http://api:8000
+      OPENBLAS_NUM_THREADS: "1"
+    volumes:
+      - ./data:/app/data:ro
+      - ./artifacts:/app/artifacts:ro
     depends_on:
       api: { condition: service_healthy }
+
+  # docker compose --profile ct up --build: 영속 로그를 감시하고 새 버전을 검증한다.
+  # 기존 서비스 모델을 바꾸려면 검증된 버전을 registry activate로 명시적으로 선택한다.
+  monitor:
+    build: { context: ., dockerfile: docker/tools.Dockerfile }
+    profiles: [ct]
+    command: ["python", "-m", "src.ct.monitor"]
+    environment:
+      EVENT_LOG_PATH: /app/artifacts/runtime/events.sqlite3
+      MODEL_VERSION: ${MODEL_VERSION:-latest}
+    volumes:
+      - ./artifacts:/app/artifacts
+
+  retrainer:
+    build: { context: ., dockerfile: docker/tools.Dockerfile }
+    profiles: [ct]
+    command: ["python", "-m", "src.ct.trigger"]
+    environment:
+      EVENT_LOG_PATH: /app/artifacts/runtime/events.sqlite3
+      REDIS_HOST: ""
+      OMP_NUM_THREADS: "4"
+      OPENBLAS_NUM_THREADS: "1"
+    volumes:
+      - ./artifacts:/app/artifacts
+      - ./data:/app/data:ro
+    cpus: 4
+    mem_limit: 16g
 
   tools:
     build: { context: ., dockerfile: docker/tools.Dockerfile }
@@ -69,6 +103,9 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       HF_HOME: /app/artifacts/models
+      EVENT_LOG_PATH: /app/artifacts/runtime/events.sqlite3
+      OMP_NUM_THREADS: "4"
+      OPENBLAS_NUM_THREADS: "1"
     volumes:
       - ./artifacts:/app/artifacts
       - ./data:/app/data

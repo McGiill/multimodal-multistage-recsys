@@ -31,7 +31,7 @@ def test_session_prefixes_only_earlier_views_in_same_session(tmp_path, monkeypat
 def test_run_compares_multistage_with_both_baselines(monkeypatch):
     from types import SimpleNamespace
 
-    q = SimpleNamespace(k=50, users=np.array(["U1"]), sessions=[[]])
+    q = SimpleNamespace(k=50, users=np.array(["U1"]), times=np.array([1.0]), targets=[{"P1"}], sessions=[[]])
     values = {"multistage": 0.3, "two_tower_only": 0.2, "popularity": 0.1}
     calls = []
 
@@ -54,7 +54,7 @@ def test_run_has_ranking_only_stage(monkeypatch):
     """단계별 비교: two_tower_ranking = Stage 1 후보를 DeepFM순으로 (세션·재정렬 없음)."""
     from types import SimpleNamespace
 
-    q = SimpleNamespace(k=50, users=np.array(["U1"]), sessions=[[]])
+    q = SimpleNamespace(k=50, users=np.array(["U1"]), times=np.array([1.0]), targets=[{"P1"}], sessions=[[]])
     calls = []
 
     def fake_eval(strategy, q, use_session, name=""):

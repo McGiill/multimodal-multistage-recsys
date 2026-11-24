@@ -1,10 +1,16 @@
 monitor:
   interval_sec: 3600
+  evaluation_path: artifacts/metrics/recommend_final*.json
+  max_evaluation_age_hours: 168
   thresholds:
     hitrate_at_50: 0.20
     ctr: 0.02
 retrain:
   new_log_trigger: 10000
+  poll_interval_sec: 60
 registry:
   dir: artifacts/models
   keep_last: 5
+  validation:
+    recall_at_300: 0.30
+    ranking_auc: 0.70
