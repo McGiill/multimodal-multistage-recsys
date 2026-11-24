@@ -12,6 +12,7 @@
 - image  : 이미지→상품 이미지 유사도 + 색·소분류 가점 (사진의 색·종류 추정 확률, src/search/attributes.py)
            가점 비중 = image_query.color_weight / category_weight (둘 다 0이면 코사인 유사도 그대로)
 - hybrid : w * 텍스트 경로 + (1-w) * 이미지 경로,                            w = hybrid.text_weight
+검색어 속 조건 ("black knit under $50")은 search()에서 필터로 바꿔 후보를 거른다 (query_filters, src/search/query_filters.py).
 점수를 섞을 때는 척도가 달라서(텍스트↔이미지 0.2~0.35, 텍스트↔텍스트 0.7~0.9, BM25 0~수십)
 후보 안에서 0~1로 min-max 정규화한 뒤 가중합한다.
 """
@@ -34,6 +35,7 @@ from src.search.attributes import AttributeProbe
 from src.search.bm25 import BM25Index, tokenize
 from src.search.catalog import index_dir, load_catalog, product_texts
 from src.search.encoder import BaseEncoder, build_encoder
+from src.search.query_filters import QueryFilters, QueryUnderstanding
 
 
 @dataclass
@@ -65,7 +67,7 @@ class Searcher:
             raise ValueError(f"인덱스 모델({meta['model_name']})과 설정 모델이 다릅니다")
 
         ids = pd.read_parquet(d / "product_ids.parquet")["product_id"]
-        columns = ["product_id", "product_code", "name", "price", "category_l1", "category_l3", "color"]
+        columns = ["product_id", "product_code", "name", "price", "category_l1", "category_l3", "color", "pattern"]
         catalog = load_catalog(self.cfg, columns=columns).set_index("product_id")
         catalog = catalog.loc[ids].reset_index()
         self.product_ids = catalog["product_id"].to_numpy()
@@ -76,6 +78,7 @@ class Searcher:
         self.category_l1 = catalog["category_l1"].to_numpy()
         self.category_l3 = catalog["category_l3"].to_numpy()
         self.colors = catalog["color"].to_numpy()
+        self.patterns = catalog["pattern"].to_numpy()
 
         self.image_emb = np.load(d / "image_emb.npy")
         self.text_emb = np.load(d / "text_emb.npy")
@@ -88,6 +91,7 @@ class Searcher:
         )
         self.bm25 = self._build_bm25() if self.cfg["text_query"].get("bm25_weight", 0) else None
         self.attributes = self._load_attributes(d / "attributes.npz")
+        self.query_understanding = self._load_query_understanding()
 
     def _build_bm25(self) -> BM25Index:
         columns = ["product_id", "name", "color", "pattern", "category_l3", "description"]
@@ -100,6 +104,12 @@ class Searcher:
         if any(self._attribute_weights().values()):
             print(f"[searcher] {path.name} 없음 → 이미지 검색에 색·소분류 가점 없이 동작 (python -m src.search.attributes)")
         return None
+
+    def _load_query_understanding(self) -> QueryUnderstanding | None:
+        if not self.cfg.get("query_filters", {}).get("enabled"):
+            return None
+        cfg = load_config(self.cfg["query_filters"]["config"])
+        return QueryUnderstanding(cfg, load_config(cfg["dictionary"]))
 
     def _attribute_weights(self) -> dict[str, float]:
         image_query = self.cfg.get("image_query", {})
@@ -144,12 +154,33 @@ class Searcher:
         """후보 중 고객층(category_l1)이 l1에 있는 상품만. None이면 그대로."""
         return cand if l1 is None else cand[np.isin(self.category_l1[cand], list(l1))]
 
+    def _filter_mask(self, filters: QueryFilters) -> np.ndarray:
+        """검색어 조건을 모두 만족하는 상품 (카탈로그 값 변환은 QueryUnderstanding.catalog_values)."""
+        values = self.query_understanding.catalog_values(filters)
+        mask = np.zeros(len(self.product_ids), dtype=bool)
+        mask[self.select_rows(l3=values["category_l3"], l1=values["category_l1"], colors=values["color"])] = True
+        if values["pattern"] is not None:
+            mask &= np.isin(self.patterns, values["pattern"])
+        if filters.price_min is not None:
+            mask &= self.prices >= filters.price_min
+        if filters.price_max is not None:
+            mask &= self.prices <= filters.price_max
+        return mask
+
+    def _filter_candidates(self, cand: np.ndarray, filters: QueryFilters, top_k: int) -> np.ndarray:
+        """후보 중 조건을 만족하는 상품만. top_k개보다 적으면 조건을 만족하는 상품 전체를 후보로 쓴다
+        (조건에 맞는 상품이 인덱스 후보 밖에 있을 수 있어서)."""
+        mask = self._filter_mask(filters)
+        kept = cand[mask[cand]]
+        return kept if len(kept) >= top_k else np.flatnonzero(mask)
+
     def search_vectors(
         self, q_text: np.ndarray | None, q_image: np.ndarray | None, top_k: int, query_text: str | None = None,
-        l1: Iterable[str] | None = None,
+        l1: Iterable[str] | None = None, filters: QueryFilters | None = None,
     ) -> SearchResult:
         """이미 인코딩된 쿼리 벡터로 검색 (평가 스크립트가 배치 인코딩 후 호출). BM25는 query_text가 있을 때만.
-        l1: 고객층(category_l1) 제한 (쇼핑몰 화면의 여성 / 남성 / 아동). 인덱스 후보 중에서 거른다."""
+        l1: 고객층(category_l1) 제한 (쇼핑몰 화면의 여성 / 남성 / 아동). 인덱스 후보 중에서 거른다.
+        filters가 있으면 조건을 만족하는 상품 안에서만 순위를 매긴다."""
         lexical = self._lexical(query_text) if q_text is not None else None
         if q_text is not None and q_image is not None:
             search_type = SearchType.HYBRID
@@ -157,23 +188,31 @@ class Searcher:
                 self._candidates(self.image_index, q_text), self._candidates(self.text_index, q_text),
                 self._candidates(self.image_index, q_image), *self._lexical_candidates(lexical),
             ])), l1)
-            w = self.cfg["hybrid"]["text_weight"]
-            scores = w * _minmax(self._text_route(q_text, cand, lexical)) + (1 - w) * _minmax(
-                self._image_route(q_image, cand)
-            ) if len(cand) else np.zeros(0)
         elif q_text is not None:
             search_type = SearchType.TEXT
             cand = self._restrict(np.unique(np.concatenate([
                 self._candidates(self.image_index, q_text), self._candidates(self.text_index, q_text),
                 *self._lexical_candidates(lexical),
             ])), l1)
-            scores = self._text_route(q_text, cand, lexical) if len(cand) else np.zeros(0)
         elif q_image is not None:
             search_type = SearchType.IMAGE
             cand = self._restrict(self._candidates(self.image_index, q_image), l1)
-            scores = self._image_route(q_image, cand) if len(cand) else np.zeros(0)
         else:
             raise ValueError("query_text 또는 image 중 하나는 필요합니다")
+        if filters:
+            cand = self._filter_candidates(cand, filters, top_k)
+        if len(cand) == 0:
+            return SearchResult(search_type=search_type, product_ids=[], scores=[], total_count=0)
+
+        if search_type == SearchType.HYBRID:
+            w = self.cfg["hybrid"]["text_weight"]
+            scores = w * _minmax(self._text_route(q_text, cand, lexical)) + (1 - w) * _minmax(
+                self._image_route(q_image, cand)
+            )
+        elif search_type == SearchType.TEXT:
+            scores = self._text_route(q_text, cand, lexical)
+        else:
+            scores = self._image_route(q_image, cand)
 
         order = np.argsort(-scores)[:top_k]
         rows = cand[order]
@@ -247,18 +286,29 @@ class Searcher:
         return result
 
     # ------------------------------------------------------------------ API 진입점
+    def parse_filters(self, query_text: str | None, use_llm: bool = False) -> QueryFilters | None:
+        """검색어 속 조건 → 필터. query_filters가 꺼져 있거나 조건이 없으면 None. use_llm=False면 사전 규칙만."""
+        if self.query_understanding is None or not query_text:
+            return None
+        filters = self.query_understanding.parse(query_text, use_llm=use_llm)
+        return filters if filters else None
+
     def search(self, query_text: str | None, image: Image.Image | None, top_k: int = 10,
-               l1: Iterable[str] | None = None) -> SearchResult:
+               l1: Iterable[str] | None = None, use_llm: bool = False) -> SearchResult:
+        """use_llm: 검색어 조건을 LLM으로 뽑을지 (CPU에서 쿼리당 수 초, 쇼핑몰 검색창에서만 켬)."""
+        filters = self.parse_filters(query_text, use_llm)
+        if filters is not None and filters.text:
+            query_text = filters.text  # 가격 표현("under $50")은 빼고 인코딩
         q_text = self.encoder.encode_texts([query_text])[0] if query_text else None
         q_image = self.encoder.encode_images([image])[0] if image is not None else None
-        return self.search_encoded(q_text, q_image, top_k, query_text, l1)
+        return self.search_encoded(q_text, q_image, top_k, query_text, l1, filters=filters)
 
     def search_encoded(
         self, q_text: np.ndarray | None, q_image: np.ndarray | None, top_k: int, query_text: str | None = None,
-        l1: Iterable[str] | None = None,
+        l1: Iterable[str] | None = None, filters: QueryFilters | None = None,
     ) -> SearchResult:
         """search_vectors + 결과의 상품 정보 (사진을 이미 인코딩한 스타일 사진 검색에서 호출)."""
-        result = self.search_vectors(q_text, q_image, top_k, query_text, l1)
+        result = self.search_vectors(q_text, q_image, top_k, query_text, l1, filters=filters)
         result.items = self._items(result)
         return result
 

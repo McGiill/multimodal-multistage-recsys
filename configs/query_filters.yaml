@@ -1,0 +1,62 @@
+# 텍스트 검색 Query Understanding: 영어 검색어 속 조건 → 필터 (src/search/query_filters.py)
+#   "black knit under $50" → kind=knit, color=black, price_max=50
+# 옷 종류(kinds)·색(colors) 사전은 configs/style_search.yaml 것을 그대로 쓴다 (이름 → 카탈로그 값).
+# 카탈로그에 없는 조건("warm", "for office")은 필터로 바꾸지 않고 문장에 남겨 CLIP·BM25 점수에 쓴다.
+
+dictionary: style_search
+
+llm:                      # 종류·색·무늬·고객층 추출. 꺼져 있거나 실패(로딩 실패·형식 깨짐·시간 초과)하면 규칙으로 대체
+  enabled: true           # API는 요청에 use_llm=true가 있을 때만 LLM을 쓴다 (search.yaml query_filters.default_use_llm)
+  # Qwen3-0.6B를 4B 라벨로 LoRA 학습한 병합 모델 (레포 기준 폴더, git 제외). 폴더가 없으면 HF 모델 이름으로 받는다
+  # (Qwen/Qwen3-0.6B 기본 모델은 few_shot: true, describe.enabled: false로)
+  model_name: artifacts/models/qwen3-0.6b-qf-lora
+  device: auto            # auto | cpu | cuda | mps. LoRA 모델 CPU 쿼리당 약 6~7초, GPU 약 2초 (2026-11-21, 이 PC)
+  few_shot: false         # 아래 examples를 프롬프트에 넣을지. LoRA 모델은 예시 없이 학습해서 false
+  max_new_tokens: 140     # 필터 6칸 ≈ 35~40 토큰 + visual_description
+  max_time_s: 15.0        # 생성 시간 상한. 넘으면 JSON이 덜 끝나서 규칙으로 대체
+  max_array_length: 3     # kind / color / pattern 목록 최대 길이 (스키마 maxItems + 검증에서 자름)
+  cache_size: 1024        # 같은 검색어는 다시 생성하지 않음 (LRU)
+  system_prompt: >-
+    You convert a fashion shop search query into JSON filters. Use only values the query states.
+    Leave a field empty or null when the query does not mention it. Never guess prices or colors.
+  describe:               # 상황 표현 풀이 칸 (LoRA 모델이 이 형식으로 학습됨). 결과는 아직 검색 점수에 쓰지 않는다
+    enabled: true
+    max_length: 100
+    prompt: >-
+      visual_description: when the query mentions an occasion, season, activity or feeling, describe in a few English
+      words what suitable clothes look like (fabric, sleeves, length, fit, style). Do not put these guesses into kind,
+      color, pattern or audience. Use an empty string when there is nothing to describe.
+  # few-shot 예시 (few_shot: true일 때). 빈 칸은 생략하면 [] / null로 채운다.
+  # 시험 12개 쿼리 (2026-11-12): 예시 3개 → 가격 방향·색 누락이 많음, 아래 5개 → 12개 중 9개 정확
+  examples:
+    - {query: "black knit sweater under $50", kind: [knit], color: [black], price_max: 50}
+    - {query: "cozy striped dress for women between 20 and 40 dollars", kind: [dress], pattern: [stripe], audience: women, price_min: 20, price_max: 40}
+    - {query: "something warm for a winter trip"}
+    - {query: "navy blue jeans less than $30", kind: [pants], color: [navy], price_max: 30}
+    - {query: "red sneakers for kids over 15 dollars", kind: [shoes], color: [red], audience: kids, price_min: 15}
+
+price:                    # 가격 규칙 (달러). 0.6B는 이하/이상 방향을 자주 틀려서 규칙이 찾으면 규칙 값을 쓴다
+  max_words: [under, below, less than, cheaper than, up to, at most, no more than, max, maximum, within]
+  min_words: [over, above, more than, at least, no less than, min, minimum, starting at]
+  max_suffixes: [or less, or under, and under, or below, and below, or cheaper, max]
+  min_suffixes: [or more, or above, and above, and up, and over, plus]
+  # 범위: "$20-$35", "20 to 40 dollars", "between $20 and $40" (양쪽 중 한쪽에 $ / dollars가 있어야 함)
+  # 조건 없이 금액만 있으면 ("$50 jeans") 필터로 쓰지 않는다
+
+patterns:                 # 무늬 이름 → 카탈로그 pattern 값 (H&M graphical_appearance_name)
+  solid: {words: [solid, plain], values: [Solid]}
+  stripe: {words: [striped, stripe, stripes, stripy], values: [Stripe]}
+  check: {words: [checked, check, checkered, plaid, gingham, tartan], values: [Check]}
+  dot: {words: [polka dot, polka dots, dotted, dots], values: [Dot]}
+  floral: {words: [floral, flower, flowers, flowery], values: [All over pattern]}  # 카탈로그에 꽃무늬 값이 따로 없음 (전체 무늬에 포함)
+  denim: {words: [denim], values: [Denim, Chambray]}
+  lace: {words: [lace, lacy], values: [Lace]}
+  print: {words: [printed, print, graphic], values: [Front print, Placement print, All over pattern]}
+  melange: {words: [melange, heathered, marl], values: [Melange]}
+  metallic: {words: [metallic, glitter, glittery, sequin, sequins, shiny], values: [Glittering/Metallic, Metallic, Sequin]}
+  embroidery: {words: [embroidered, embroidery], values: [Embroidery]}
+
+audience:                 # 고객층 → 카탈로그 category_l1 (configs/style_search.yaml audience.groups와 같은 묶음)
+  women: {words: [women, woman, womens, ladies, lady, female], category_l1: [Ladieswear, Divided, Sport]}
+  men: {words: [men, man, mens, male, guys], category_l1: [Menswear, Sport]}
+  kids: {words: [kids, kid, children, child, baby, toddler, boys, girls], category_l1: [Baby/Children]}

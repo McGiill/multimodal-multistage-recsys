@@ -26,11 +26,13 @@ httpx2==2.14.0
 huggingface_hub==2.4.0
 idna==3.20
 iniconfig==2.3.1
+interegular==0.3.3
 itsdangerous==2.2.0
 Jinja2==3.1.6
 joblib==1.6.0
 jsonschema==4.26.0
 jsonschema-specifications==2025.9.1
+lm-format-enforcer==0.11.3
 markdown-it-py==4.2.0
 MarkupSafe==3.0.4
 mdurl==0.1.2

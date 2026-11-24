@@ -458,7 +458,7 @@ async function renderSearch(query) {
   }
   let shown = new Set();
   try {
-    const res = await post("/api/search", { query_text: query, top_k: CONFIG.searchTopK, audience: searchAudience() });
+    const res = await post("/api/search", { query_text: query, top_k: CONFIG.searchTopK, audience: searchAudience(), use_llm: true });
     shown = new Set(res.results.map(r => r.product_id));
     slot(page, "results").innerHTML = res.results.length
       ? res.results.map(r => card(r, { source: "search" })).join("")

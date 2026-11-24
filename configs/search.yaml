@@ -43,6 +43,11 @@ attributes:               # 색 / 소분류 분류기 학습 (indexer가 마지�
   lr: 0.01
   weight_decay: 0.0001
 
+query_filters:            # 검색어 속 조건 → 필터 ("black knit under $50" → 종류 / 색 / 가격), 설정은 configs/query_filters.yaml
+  enabled: true           # API 텍스트·하이브리드 검색(Searcher.search)에만 적용. 평가 스크립트(search_vectors 직접 호출)는 필터 없음
+  config: query_filters
+  default_use_llm: false  # /api/search 요청에 use_llm이 없을 때. false면 사전 규칙만 (LLM은 CPU에서 쿼리당 수 초)
+
 default_top_k: 10
 
 paths:
