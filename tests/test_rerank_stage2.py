@@ -37,13 +37,15 @@ def make_products(n: int = 40, n_new: int = 3) -> pd.DataFrame:
     앞쪽 상품일수록 상의 비중이 높고, 마지막 n_new개는 신규 상품(1일 전 등록).
     """
     rows = []
+    l3_of = {"Garment Upper body": "T-shirt", "Garment Lower body": "Trousers", "Shoes": "Sneakers", "Accessories": "Bag"}
     for i in range(n):
         new = i >= n - n_new
+        l2 = L2[0] if i < n // 2 else L2[i % len(L2)]
         rows.append({
             "product_id": f"hm_{i:010d}",
             "category_l1": "Ladieswear",
-            "category_l2": L2[0] if i < n // 2 else L2[i % len(L2)],
-            "category_l3": "T-shirt",
+            "category_l2": l2,
+            "category_l3": l3_of[l2],  # 실제 데이터처럼 소분류는 중분류 안에 있다 (다양성 기준이 소분류여도 검사 가능)
             "brand": "b", "color": "c", "pattern": "p", "price": 10.0,
             "created_at": pd.Timestamp("2026-03-30") if new else pd.Timestamp("2025-06-01"),
         })
@@ -130,8 +132,8 @@ def test_rerank_stage2_output() -> None:
 
     assert not res.is_cold_start
     assert len(res.items) == 10
-    lookup = svc.catalog["category_l2"]
-    assert max_run_length([lookup[i.product_id] for i in res.items]) <= 2
+    lookup = svc.catalog[svc.config.category_field]  # 설정의 다양성 기준 (2026-11-24부터 소분류)
+    assert max_run_length([lookup[i.product_id] for i in res.items]) <= svc.config.max_consecutive
     assert any(i.reason == "new_item" for i in res.items)
     # Stage 2 점수는 그대로
     score_of = {c.product_id: c.score for c in svc.candidates(ids, scores)}

@@ -78,7 +78,7 @@ def test_config_loads_recommend_yaml():
     assert cfg.new_item_max_age_days == 7
     assert cfg.new_item_slots >= 1
     assert 1 <= cfg.exploration_slots <= 2
-    assert cfg.category_field == "category_l2"
+    assert cfg.category_field == "category_l3"  # 2026-11-24: 같은 카테고리 = 같은 상품 종류(소분류)
     assert cfg.dedupe_field == "product_code"
 
 
