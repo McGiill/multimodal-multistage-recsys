@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
+from src.common.config import load_config
+from src.recommendation.preferences.signal import PreferencePolicy, eligible_weights
 
 from src.common.schemas import (
     PipelineLatency,
@@ -33,7 +35,7 @@ from src.serving.model_loader import get_recommendation_models
 @register("multistage")
 class MultiStageStrategy(RecommendStrategy):
     def recommend(self, user_id, top_n, at=None, session_id=None, session_clicks=None,
-                  audience=None, session_weight=None, recent_clicks=None):
+                  audience=None, session_weight=None, recent_clicks=None, preference_weights=None):
         """session_clicks: 세션 클릭을 직접 넘길 때 (오프라인 평가·시뮬레이터). 없으면 session_id로 Feature Store 조회.
 
         최근 행동 반영 (configs/recommend.yaml session)
@@ -63,9 +65,22 @@ class MultiStageStrategy(RecommendStrategy):
         live = [store.pmap[p] for p in recent if p in store.pmap] if scfg.live_history else []
         n_candidates = models.cfg["candidate"]["n_candidates"]
         allowed_items = audience_mask(store, audience)
+        # Explicit preferences never enter the user's behavior history or session.
+        preference_policy = None
+        active_preferences = {}
+        if preference_weights:
+            pref_cfg = load_config('outfit_preferences')
+            if pref_cfg['enabled']:
+                preference_policy = PreferencePolicy.from_config(pref_cfg)
+                if preference_policy.max_weight > 0:
+                    scoped = {pid: weight for pid, weight in preference_weights.items()
+                              if pid in store.pmap and
+                              (allowed_items is None or allowed_items[store.pmap[pid]])}
+                    active_preferences = eligible_weights(scoped, store.pmap, store.created,
+                                                          now, preference_policy.candidate_limit)
         if getattr(models, "final_ranker", None) is not None:
             return self._final_rank(models, runtime_cfg, scfg, user_id, top_n, now, clicks, live,
-                                    allowed_items, session_weight, begin)
+                                    allowed_items, session_weight, begin, active_preferences, preference_policy)
         options = {"allowed": allowed_items} if allowed_items is not None else {}
         ids, long_scores, state = models.retriever.retrieve(user_id, n_candidates, now, recent=live, **options)
         # 세션: 장기(User Tower) + 단기(현재 세션 클릭) 결합, 세션 관심 상품을 후보에 추가
@@ -81,6 +96,9 @@ class MultiStageStrategy(RecommendStrategy):
             if scfg.blend_candidates:
                 pids = pids[:n_candidates]
             ids = np.array([store.pmap[p] for p in pids if p in store.pmap], dtype=np.int64)
+        if active_preferences:
+            ids = np.asarray(list(dict.fromkeys([*ids.tolist(),
+                *(store.pmap[pid] for pid in active_preferences)])), dtype=np.int64)
         candidate = time.perf_counter()
         rerank = get_rerank_service(models)
         new_ids = rerank.new_item_ids(now)
@@ -101,14 +119,15 @@ class MultiStageStrategy(RecommendStrategy):
         rerank_options = {"allowed": allowed_items} if allowed_items is not None else {}
         result = rerank.rerank(
             ids, scores, state, now, top_n,
-            new_ids=new_ids, new_scores=all_scores[np.searchsorted(all_ids, new_ids)], **rerank_options,
+            new_ids=new_ids, new_scores=all_scores[np.searchsorted(all_ids, new_ids)],
+            preference_weights=active_preferences, preference_policy=preference_policy, **rerank_options,
         )
         reranked = time.perf_counter()
         return _response(models, rerank, scfg, user_id, result, mixed, clicks, state, {},
                          (begin, candidate, ranked, reranked))
 
     def _final_rank(self, models, runtime_cfg, scfg, user_id, top_n, now, clicks, live, allowed_items,
-                    session_weight, begin):
+                    session_weight, begin, preference_weights=None, preference_policy=None):
         """최종 순위 경로 (final_rank, 2026-11-19): Stage 1 상위 pool_size개 + 관심 카테고리 목록 후보
         → DeepFM 점수 포함 특징 → GBDT → (세션 클릭이 있으면 세션 점수 결합) → 다양성 칸 → Stage 3 규칙."""
         store, ctx = models.store, models.final_context
@@ -122,6 +141,7 @@ class MultiStageStrategy(RecommendStrategy):
                 available &= allowed_items[1:]
             pids, _ = session.top_k(clicks, scfg.n_candidates, session.allowed_mask(store.item_ids, available))
             extra = [store.pmap[p] for p in pids if p in store.pmap]
+        extra = list(dict.fromkeys([*extra, *(store.pmap[p] for p in (preference_weights or {}))]))
         candidate = time.perf_counter()
         pool, scores, _, _ = score_pool(models, ctx, models.final_ranker, user_id, now, q, state, stage1,
                                         allowed_items, extra)
@@ -149,11 +169,15 @@ class MultiStageStrategy(RecommendStrategy):
                 new_ids = new_ids[allowed_items[new_ids]]
             new_scores = models.score(new_ids, state, now)
         result = rerank.rerank(pool, order, state, now, top_n, new_ids=new_ids, new_scores=new_scores,
+                               preference_weights=preference_weights, preference_policy=preference_policy,
                                **({"allowed": allowed_items} if allowed_items is not None else {}))
         rerank.record_exposure([r.product_id for r in result.items])
         reranked = time.perf_counter()
         # 정렬에 쓴 다양성 점수 대신 최종 순위 모델 점수를 응답에 싣는다 (cold-start 인기·트렌딩 목록은 그 점수 그대로)
-        display = {} if result.is_cold_start else dict(zip((store.item_ids[i - 1] for i in pool), scores.tolist()))
+        model_scores = dict(zip((store.item_ids[i - 1] for i in pool), scores.tolist()))
+        display = ({r.product_id: model_scores[r.product_id] for r in result.items
+                    if r.reason == "outfit_preference" and r.product_id in model_scores}
+                   if result.is_cold_start else model_scores)
         return _response(models, rerank, scfg, user_id, result, mixed, clicks, state, display,
                          (begin, candidate, ranked, reranked))
 

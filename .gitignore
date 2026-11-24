@@ -27,4 +27,5 @@ artifacts/indexes/*
 .local/
 data/closet-demo-data*/
 closet-demo-data*/
+closet-demo*.zip
 *.sqlite3

@@ -23,7 +23,7 @@ const CONFIG = {
 };
 
 const AUDIENCE = { all: "전체", women: "여성", men: "남성", kids: "아동" };
-const REASON = { ctcvr: "맞춤 추천", ctr: "맞춤 추천", cvr: "맞춤 추천", mab_exploration: "새로운 발견", new_item: "신상품", popular: "인기", trending: "급상승" };
+const REASON = { ctcvr: "맞춤 추천", ctr: "맞춤 추천", cvr: "맞춤 추천", outfit_preference: "선택·저장한 코디 반영", mab_exploration: "새로운 발견", new_item: "신상품", popular: "인기", trending: "급상승" };
 const COLD_REASONS = new Set(["popular", "trending"]);
 const SEARCH_TYPE = { text: "텍스트 검색", image: "이미지 검색", hybrid: "사진 + 문장 검색" };
 const BASIS = {
@@ -100,6 +100,7 @@ async function recommend(exclude = new Set()) {
   const skip = new Set([...exclude, ...state.hidden]);
   const params = new URLSearchParams({
     user_id: state.userId, session_id: state.sessionId, at: CONFIG.demoAt,
+    use_outfit_preferences: "true",
     top_n: String(Math.min(100, CONFIG.recTopN + skip.size)),
   });
   const res = await api(`/api/recommend?${params}`);

@@ -105,7 +105,7 @@ async function renderMoodboard(loaded) {
       page.querySelectorAll('button').forEach(button => { button.disabled = true; });
       status.textContent = '저장하는 중입니다.';
       try {
-        await post(closetUrl('survey', {}, uid), {selected:skip ? [] : [...picks], skipped:!!skip || picks.size === 0});
+        await post(closetUrl('survey', {}, uid), {selected:skip ? [] : [...picks], skipped:!!skip, clear:!skip && picks.size === 0});
         try { sessionStorage.removeItem(draftKey); } catch {}
         if (!page.isConnected || state.userId !== uid) return;
         state.onboarded = true;

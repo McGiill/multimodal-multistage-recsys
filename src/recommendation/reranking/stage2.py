@@ -41,6 +41,7 @@ from src.recommendation.reranking.mab import ExplorationPicker
 from src.recommendation.reranking.popularity import PopularityConfig, PopularityLists
 from src.recommendation.reranking.reranker import RerankConfig, Reranker
 from src.recommendation.runtime_config import resolve_runtime_config
+from src.recommendation.preferences.signal import PreferencePolicy
 
 STAGE2_REASON = "cvr"  # 기본값. 서빙은 모델 묶음의 ranking.objective (ctr / cvr)를 쓴다 (get_rerank_service)
 POPULAR_REASON = "popular"
@@ -175,6 +176,8 @@ class RerankService:
         new_ids: Sequence[int] | np.ndarray = (),
         new_scores: Sequence[float] | np.ndarray = (),
         allowed: np.ndarray | None = None,
+        preference_weights: Mapping[str, float] | None = None,
+        preference_policy: PreferencePolicy | None = None,
     ) -> RerankResult:
         """Stage 2 출력(후보 전체, top_n으로 자르기 전) → 최종 Top-N.
 
@@ -188,7 +191,10 @@ class RerankService:
             popular, trending = self.cold_start_lists(now, n, allowed)
             if not popular and not trending:
                 # 인기·트렌딩 목록이 없으면 cold-start 사용자에게 빈 진열이 나가므로 Stage 2 순서로 채운다
-                history = self.config.min_history
+                if preference_weights:
+                    popular = self.candidates(ids, scores)
+                else:
+                    history = self.config.min_history
         new_pool: list[Candidate] = []
         if len(new_ids):
             new_scores = np.asarray(new_scores, dtype=np.float32)
@@ -202,6 +208,8 @@ class RerankService:
             trending=trending,
             new_item_pool=new_pool,
             top_n=n,
+            preference_weights=preference_weights,
+            preference_policy=preference_policy,
         )
 
     def exploration_arms_of(self, items) -> dict[str, str]:

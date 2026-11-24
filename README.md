@@ -111,6 +111,7 @@ docs/           실험 리포트 · 아키텍처 · 팀 역할
 ## 옷장·콜드스타트
 
 최신 60상품 데모 코드는 `src/closet/`에 있습니다. [실행 및 변경 안내](docs/closet/README.md).
+시연 데이터는 팀 내부에서 별도로 공유합니다. [선택·저장 코디를 기존 상품 추천에 연결하는 방법](docs/closet/RECOMMENDATION_CONNECTION.md)도 포함되어 있습니다. 조회·구매 이력을 생성하지 않는 별도 취향 신호이며 실제 추천 실행에는 팀 학습 모델이 필요합니다.
 
 ```bash
 python -m pip install -r requirements/closet.txt

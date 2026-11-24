@@ -11,6 +11,23 @@ class Expanded60Checks(GenderFiveChecks):
     expected_photos = 310
     expected_verified = 308
 
+    def test_explicit_survey_clear_preserves_real_history(self):
+        uid = 'SURVEY_CLEAR_SIGNAL'
+        self.register(uid, 'M')
+        path = '/api/closet/survey?user_id=' + uid
+        look = self.request(path)['outfits'][0]
+        self.request(path, {'selected':[look['id']], 'skipped':False})
+        self.store.record_outfit_view(uid, look['id'])
+        # Skip/close retains prior choices; explicit clear removes the survey only.
+        self.request(path, {'selected':[], 'skipped':True})
+        self.assertEqual(self.store.get(uid)['survey']['selected'], [look['id']])
+        before_views = self.store.recent_outfit_views(uid)
+        self.request(path, {'selected':[], 'skipped':False, 'clear':True})
+        payload = self.request('/api/closet/preference-seed?user_id=' + uid)
+        self.assertEqual(payload['seed_products'], [])
+        self.assertEqual(payload['operation'], 'replace')
+        self.assertEqual(self.store.recent_outfit_views(uid), before_views)
+
     def test_every_cohort_link_survives_all60_owned(self) -> None:
         """Every displayed look must retain an unowned alternative, not just repaired looks."""
         if not (data_root() / 'FINISH_REVIEW.json').exists():
@@ -188,6 +205,7 @@ def load_tests(loader, standard_tests, pattern):
     names = [n for n in GenderFiveChecks.__dict__ if n.startswith('test_')]
     names += ['test_saved_outfits_persist_without_fabricating_preferences']
     names += ['test_every_cohort_link_survives_all60_owned']
+    names += ['test_explicit_survey_clear_preserves_real_history']
     names += ['test_quality68_replacements_and_retired_links', 'test_dataset_product_migration_preserves_other_history', 'test_expansion_review_matches_live_connections', 'test_reverse_repair_survives_all_owned_filter', 'test_profile_persistence_and_isolation',
               'test_unknown_product_not_saved', 'test_automatic_recency_unknown_tags_and_empty_history']
     return unittest.TestSuite(Expanded60Checks(n) for n in names)
