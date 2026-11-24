@@ -178,6 +178,25 @@ def test_rank_rows_combines_text(searcher) -> None:
     assert searcher.rank_rows(image[4], np.array([], dtype=int), 1, q_text=image[3]).product_ids == []
 
 
+def test_text_search_applies_query_filters(searcher) -> None:
+    from src.common.config import load_config
+    from src.search.query_filters import QueryUnderstanding
+
+    cfg = load_config("query_filters") | {"llm": {"enabled": False}}  # 규칙만 (모델 로딩 없음)
+    searcher.query_understanding = QueryUnderstanding(cfg, load_config(cfg["dictionary"]))
+    for text in ("q3", "black q3", "boots q3"):
+        searcher.encoder.text_vecs[text] = searcher._image_emb_for_test[3]
+
+    cheap = searcher.search("q3 under $40000", None, top_k=6)  # 3번(50000)은 빠지고 조건에 맞는 상품 전체에서 순위
+    assert set(cheap.product_ids) == {"hm_0000000000", "hm_0000000001", "hm_0000000002", "hm_0000000005"}
+    assert all(item["price"] <= 40000 for item in cheap.items)
+    assert set(searcher.search("black q3", None, top_k=6).product_ids) == {"hm_0000000000", "hm_0000000004"}
+    assert searcher.search("boots q3", None, top_k=6).product_ids == ["hm_0000000004"]
+    empty = searcher.search("q3 under $5000", None, top_k=6)
+    assert empty.product_ids == [] and empty.total_count == 0
+    assert searcher.search("q3", None, top_k=1).product_ids == ["hm_0000000003"]  # 조건 없으면 그대로
+
+
 def test_bm25_baseline() -> None:
     ids, scores = BM25Searcher(_catalog()).search("black strap top", top_k=2)
     assert ids[0] in {"hm_0000000000", "hm_0000000001"}

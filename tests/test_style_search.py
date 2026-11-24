@@ -100,6 +100,7 @@ def searcher(tmp_path) -> Searcher:
         "category_l1": [p[2] for p in PRODUCTS],
         "category_l3": [p[0] for p in PRODUCTS],
         "color": [p[1] for p in PRODUCTS],
+        "pattern": ["Solid"] * len(PRODUCTS),
     })
     catalog.to_parquet(tmp_path / "products.parquet", index=False)
     d = tmp_path / "fake__clip"

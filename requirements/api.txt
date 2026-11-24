@@ -5,6 +5,7 @@ python-multipart>=0.0.9
 redis>=5.0
 torch>=2.0
 transformers>=4.38
+lm-format-enforcer>=0.11   # 검색어 조건 추출 LLM의 JSON 형식 강제 (src/search/query_filters.py)
 faiss-cpu>=1.7.4
 pillow>=10.0
 rank-bm25>=0.2.2

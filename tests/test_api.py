@@ -29,9 +29,11 @@ class FakeSearcher:
     category_l3 = np.array(["Vest top", "Vest top"])
     colors = np.array(["Black", "White"])
     last_l1 = "unset"
+    last_use_llm = None
 
-    def search(self, query_text, image, top_k=10, l1=None):
+    def search(self, query_text, image, top_k=10, l1=None, use_llm=False):
         FakeSearcher.last_l1 = l1
+        FakeSearcher.last_use_llm = use_llm
         search_type = (
             SearchType.HYBRID if query_text and image is not None else SearchType.IMAGE if image is not None else SearchType.TEXT
         )
@@ -167,6 +169,16 @@ def test_search_audience_filter() -> None:
     client.post("/api/search", json={"query_text": "top", "audience": "all"})
     assert FakeSearcher.last_l1 is None
     assert client.post("/api/search", json={"query_text": "top", "audience": "aliens"}).status_code == 422
+
+
+def test_search_use_llm_flag() -> None:
+    client.post("/api/search", json={"query_text": "top"})
+    assert FakeSearcher.last_use_llm is False  # configs/search.yaml query_filters.default_use_llm
+    client.post("/api/search", json={"query_text": "top", "use_llm": True})
+    assert FakeSearcher.last_use_llm is True
+    client.post("/api/search", data={"query_text": "top", "use_llm": "true"})
+    assert FakeSearcher.last_use_llm is True
+    assert client.post("/api/search", json={"query_text": "top", "use_llm": "maybe"}).status_code == 422
 
 
 def test_similar_products() -> None:

@@ -6,6 +6,7 @@ POST /api/search/style — 스타일 사진(사람이 옷을 입은 사진) + �
 - multipart : query_text=..., image=<파일>, top_k=10
 /api/search: 텍스트만 있으면 text, 이미지만 있으면 image, 둘 다 있으면 hybrid.
              audience(선택): all(기본) / women / men / kids → 그 고객층(category_l1) 상품만 (쇼핑몰 화면)
+             use_llm(선택, 기본 false): 검색어 속 조건(종류·색·무늬·고객층) 추출에 LLM 사용 (configs/query_filters.yaml)
 /api/search/style: 사진 필수. 텍스트 예 "이 옷이랑 어울리는 바지", "소매 더 짧게".
                    상품 사진 + 사진만 / 설명 문장은 /api/search와 같은 검색, 색 변경·종류·디테일 요청은 조건 + 유사도.
                    audience(선택): auto(기본) / all / women / men / kids
@@ -130,6 +131,19 @@ def _audience_l1(audience: object) -> list[str] | None:
     return list(groups[audience]["category_l1"])
 
 
+def _flag(value: object, default: bool) -> bool:
+    """JSON true/false 또는 multipart 문자열 "true"/"false"/"1"/"0"."""
+    if value in (None, ""):
+        return default
+    if isinstance(value, bool):
+        return value
+    if str(value).lower() in ("true", "1"):
+        return True
+    if str(value).lower() in ("false", "0"):
+        return False
+    raise HTTPException(422, "use_llm은 true / false")
+
+
 def _same_audience_l1(category_l1: str) -> list[str] | None:
     """기준 상품과 같은 고객층: 그 category_l1이 들어 있는 고객층 묶음의 category_l1 전부 (예: Ladieswear → 여성복 전체).
     어느 묶음에도 없으면 None (제한 없음)."""
@@ -147,9 +161,10 @@ async def search(request: Request, searcher: Annotated[Searcher, Depends(get_sea
     if not 1 <= top_k <= 100:
         raise HTTPException(422, "top_k는 1~100 사이여야 합니다")
     l1 = _audience_l1(fields.get("audience"))
+    use_llm = _flag(fields.get("use_llm"), load_config("search")["query_filters"]["default_use_llm"])
 
     image = _open_image(image_bytes) if image_bytes is not None else None
-    result = await run_in_threadpool(searcher.search, query_text, image, top_k, l1)
+    result = await run_in_threadpool(searcher.search, query_text, image, top_k, l1, use_llm)
     return SearchResponse(
         search_type=result.search_type,
         results=[SearchResultItem(**item) for item in result.items],
