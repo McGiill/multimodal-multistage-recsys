@@ -1,5 +1,8 @@
 seed: 42
-version: stage12-final-v20261122   # 선택용 묶음 (train만 학습). 서빙·test 평가는 refit 묶음 (<version>-refit, 아래 refit)
+version: stage12-final-v20261124   # 선택용 묶음 (train만 학습). 서빙·test 평가는 refit 묶음 (<version>-refit, 아래 refit)
+                                   # 2026-11-24: Stage 1·2 동일. 최종 순위 모델을 두 기간(창 A 03-05~03-13 + valid)으로 학습,
+                                   #   Stage 3 = 소분류 연속 제한·탐색 1칸·다양성 3칸. 정직한 검증(창 A 전 묶음 → valid)으로 골랐다.
+                                   #   두 기간 학습은 make train에 아직 없다 (실험 스크립트로 학습, final_ranker.json에 기록)
                                    # 2026-11-22: v20261119와 Stage 1·2 동일, 최종 순위 모델만 카테고리 의도 특징(final_rank/context.py)
                                    #   48개로 다시 학습 + 다양성 칸 4개. 이전 묶음은 그대로 둔다 (특징 이름으로 열을 골라 계속 동작)
                                    # 2026-11-19: 사용자 단위 지표 기준으로 Stage 1 이력 50·인기/카테고리 보정, 최종 순위 모델,
@@ -94,11 +97,13 @@ final_rank:               # 최종 순위 (src/recommendation/final_rank, 2026-1
     max_leaf_nodes: 63
     l2_regularization: 1.0
   diversity:              # 전체 고객 단위 다양성 (reranking/aggregate.py) → Coverage
-    tail_share: 0.08      # 목록 끝 8%(50칸 중 4칸)만 다른 고객 목록에 덜 나온 상품 우선, 앞쪽은 순위 그대로
+    tail_share: 0.06      # 목록 끝 6%(50칸 중 3칸)만 다른 고객 목록에 덜 나온 상품 우선, 앞쪽은 순위 그대로
     window: 1200          # 다양성 칸 후보 = 순위 상위 1,200개 안에서
     penalty: 1.0          # 정렬 점수 = 순위 점수(1 → 0) - penalty × log(1 + 노출 횟수)
                           # valid에서 Coverage ≥ 0.21을 만족하는 설정 중 NDCG 최대로 골랐다
                           # 2026-11-22 (특징 48개): 3칸은 Coverage 0.207로 미달 → 4칸 (NDCG 0.0845, Coverage 0.214)
+                          # 2026-11-24 (두 기간 모델 + 소분류 연속 제한 + 탐색 1칸, 정직한 검증): 3칸 NDCG 0.0737·Coverage 0.214,
+                          #   4칸 0.0733·0.224, 5칸 0.0728·0.230 → Coverage ≥ 0.209 중 NDCG 최대인 3칸
 
 refit:                    # 최종 서빙 묶음: train + valid 앞 N일로 Stage 1·2 다시 학습 (src/recommendation/refit.py)
   enabled: true           # 서빙·평가가 <version><suffix> 묶음을 쓴다 (없으면 선택용 묶음)
@@ -106,7 +111,8 @@ refit:                    # 최종 서빙 묶음: train + valid 앞 N일로 Stag
   suffix: -refit
 
 reranking:
-  category_field: category_l2       # 다양성 기준 category_l1 | category_l2 | category_l3
+  category_field: category_l3       # 다양성 기준 category_l1 | category_l2 | category_l3
+                                    #   2026-11-24: l2 → l3 (같은 카테고리 = 같은 상품 종류). 정직한 검증 NDCG +0.0024, Coverage 0.209 → 0.223
   dedupe_field: product_code        # 같은 디자인 색상 변형은 1개만 (null이면 product_id만)
   max_same_category_run: 2          # 동일 카테고리 연속 3개 이상 금지
   cold_start_min_events: 5          # 이력 5개 미만 → 인기+트렌딩 대체 (이력 = 저장된 조회 + 최근 조회, session.live_history)
@@ -128,7 +134,8 @@ reranking:
     epsilon: 0.1
     ctr_prior: [1, 2]               # Epsilon-Greedy 클릭률 보정 (클릭, 노출): 초반 운에 갇힘 방지
     ucb_c: 2.0
-    exploration_slots: 2            # 탐색 슬롯 개수 (명세: 1~2개, 위치는 slot_start 기준 자동 계산)
+    exploration_slots: 1            # 탐색 슬롯 개수 (명세: 1~2개, 위치는 slot_start 기준 자동 계산)
+                                    #   2026-11-24: 2 → 1. 정직한 검증 NDCG +0.0003 (다양성 칸 1개 추가 시 Coverage 유지)
 
 default_top_n: 10
 final_eval_k: 50                    # 최종 평가 HitRate / NDCG @k (명세 k=50, src/evaluation/eval_pipeline.py)
