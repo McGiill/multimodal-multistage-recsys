@@ -1,0 +1,31 @@
+{
+  "target": "recommend",
+  "measured_at": "2026-11-12T03:02:25",
+  "platform": "Linux-6.12.76-linuxkit-aarch64-with-glibc2.41",
+  "cpu": "",
+  "cpu_count": 10,
+  "cpu_limit": 4.0,
+  "torch_threads": 4,
+  "model_version": "stage12-ctcvr-v20261110c",
+  "store": "RedisFeatureStore",
+  "top_n": 50,
+  "scope": "TestClient server processing including parsing, feature lookup, journal and serialization; excludes TCP and model loading",
+  "prediction_at": "2026-11-12T03:02:28.281057+00:00",
+  "user_profile": "unknown isolated benchmark user",
+  "session_inputs": "20 known products; isolated benchmark keys",
+  "warmup": 10,
+  "requests_per_scenario": 100,
+  "cold": {
+    "p50_ms": 14.94,
+    "p95_ms": 17.55,
+    "mean_ms": 15.3,
+    "max_ms": 19.17
+  },
+  "session": {
+    "p50_ms": 31.66,
+    "p95_ms": 34.59,
+    "mean_ms": 32.05,
+    "max_ms": 42.18
+  },
+  "passed": true
+}

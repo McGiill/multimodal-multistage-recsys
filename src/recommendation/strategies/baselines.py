@@ -21,6 +21,7 @@ from src.recommendation.ranking.features import stamp
 from src.recommendation.reranking.stage2 import POPULAR_REASON, get_rerank_service
 from src.recommendation.strategies.base import RecommendStrategy, register
 from src.serving.model_loader import get_recommendation_models
+from src.recommendation.audience import audience_mask
 
 TWO_TOWER_REASON = "two_tower"
 RECENCY_REASON = "recency"
@@ -38,13 +39,15 @@ def _response(user_id: str, items: list[RecommendationItem], begin: float) -> Re
 
 @register("two_tower_only")
 class TwoTowerOnlyStrategy(RecommendStrategy):
-    def recommend(self, user_id: str, top_n: int, at: datetime | None = None) -> RecommendResponse:
+    def recommend(self, user_id: str, top_n: int, at: datetime | None = None, audience=None) -> RecommendResponse:
         begin = time.perf_counter()
         models = get_recommendation_models()
         now = stamp(at or datetime.now(timezone.utc))
         if now < models.store.metadata["selection_cutoff"]:
             raise ValueError("Prediction time precedes model validation cutoff")
-        ids, scores, _ = models.retriever.retrieve(user_id, top_n, now)
+        allowed = audience_mask(models.store, audience)
+        options = {"allowed": allowed} if allowed is not None else {}
+        ids, scores, _ = models.retriever.retrieve(user_id, top_n, now, **options)
         items = [
             RecommendationItem(product_id=models.store.item_ids[i - 1], score=float(s), reason=TWO_TOWER_REASON)
             for i, s in zip(ids, scores)
@@ -54,13 +57,19 @@ class TwoTowerOnlyStrategy(RecommendStrategy):
 
 @register("popularity")
 class PopularityStrategy(RecommendStrategy):
-    def recommend(self, user_id: str, top_n: int, at: datetime | None = None) -> RecommendResponse:
+    def recommend(self, user_id: str, top_n: int, at: datetime | None = None, audience=None) -> RecommendResponse:
         begin = time.perf_counter()
-        rerank = get_rerank_service(get_recommendation_models())
+        models = get_recommendation_models()
+        rerank = get_rerank_service(models)
         if rerank.popularity is None:
             raise ValueError("Popularity lists unavailable")
         now = stamp(at or datetime.now(timezone.utc))
-        ids, scores = rerank.popularity.popular(rerank.history_time(now), top_n)
+        allowed = audience_mask(models.store, audience)
+        ids, scores = rerank.popularity.popular(rerank.history_time(now),
+                                               len(rerank.item_ids) if allowed is not None else top_n)
+        if allowed is not None:
+            keep = allowed[ids]
+            ids, scores = ids[keep][:top_n], scores[keep][:top_n]
         items = [
             RecommendationItem(product_id=rerank.item_ids[i - 1], score=float(s), reason=POPULAR_REASON)
             for i, s in zip(ids, scores)
@@ -70,17 +79,21 @@ class PopularityStrategy(RecommendStrategy):
 
 @register("recency")
 class RecencyStrategy(RecommendStrategy):
-    def recommend(self, user_id: str, top_n: int, at: datetime | None = None) -> RecommendResponse:
+    def recommend(self, user_id: str, top_n: int, at: datetime | None = None, audience=None) -> RecommendResponse:
         begin = time.perf_counter()
-        rerank = get_rerank_service(get_recommendation_models())
+        models = get_recommendation_models()
+        rerank = get_rerank_service(models)
         now = stamp(at or datetime.now(timezone.utc))
         created = rerank.created_seconds
         order = np.argsort(-np.where(created <= now, created, -np.inf), kind="stable")
         codes = rerank.catalog["product_code"].to_numpy()
         items, seen = [], set()
+        allowed = audience_mask(models.store, audience)
         for j in order:
             if created[j] > now or len(items) >= top_n:
                 break
+            if allowed is not None and not allowed[j + 1]:
+                continue
             key = codes[j] if isinstance(codes[j], str) else rerank.item_ids[j]  # 코드 없으면 상품 단위
             if key in seen:
                 continue

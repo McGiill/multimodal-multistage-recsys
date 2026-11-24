@@ -95,6 +95,21 @@ def test_config_rejects_negative_slots():
     raise AssertionError("음수 슬롯 개수가 허용됨")
 
 
+def test_config_rejects_slot_start_out_of_range():
+    for bad in (-0.1, 1.5):
+        with pytest.raises(ValueError):
+            RerankConfig(slot_start=bad)
+
+
+def test_config_reads_slot_start():
+    raw = {"reranking": {"max_same_category_run": 2, "cold_start_min_events": 5, "new_item_days": 7,
+                         "new_item_min_slots": 1, "slot_start": 0.5,
+                         "mab": {"exploration_slots": 2, "algorithm": "epsilon_greedy", "epsilon": 0.1, "ucb_c": 2.0}}}
+    assert RerankConfig.from_recommend_config(raw).slot_start == 0.5
+    del raw["reranking"]["slot_start"]
+    assert RerankConfig.from_recommend_config(raw).slot_start == 0.0  # 없으면 기존(목록 전체)
+
+
 # ---------------------------------------------------------------------------
 # 슬롯 위치 계산 (개수 → 위치)
 # ---------------------------------------------------------------------------
@@ -112,15 +127,27 @@ def test_slot_positions_collision_moves_to_next_free():
     assert new_pos == [5] and exp_pos == [6]
 
 
+def test_slot_positions_start_lower_half():
+    # slot_start=0.5: 아래 절반(5~9)을 균등 분할
+    assert slot_positions(10, 1, 2, 0.5) == ([8], [7, 9])
+
+
+def test_slot_positions_start_bottom():
+    # slot_start=1: 맨 끝부터 (신규 상품이 마지막 칸, 탐색은 그 위)
+    assert slot_positions(10, 1, 2, 1.0) == ([9], [8, 7])
+    assert slot_positions(50, 1, 2, 1.0) == ([49], [48, 47])
+
+
 def test_slot_positions_never_out_of_range_or_duplicated():
     for top_n in range(0, 15):
         for n_new in range(0, 3):
             for n_exp in range(0, 4):
-                new_pos, exp_pos = slot_positions(top_n, n_new, n_exp)
-                allp = new_pos + exp_pos
-                assert len(allp) == len(set(allp))
-                assert all(0 <= p < top_n for p in allp)
-                assert len(allp) == min(top_n, n_new + n_exp)
+                for start in (0.0, 0.3, 0.5, 1.0):
+                    new_pos, exp_pos = slot_positions(top_n, n_new, n_exp, start)
+                    allp = new_pos + exp_pos
+                    assert len(allp) == len(set(allp))
+                    assert all(0 <= p < top_n for p in allp)
+                    assert len(allp) == min(top_n, n_new + n_exp)
 
 
 # ---------------------------------------------------------------------------
@@ -285,6 +312,14 @@ def test_exploration_slots_count_and_flag():
     exp = [idx for idx, i in enumerate(res.items) if i.is_exploration]
     assert 1 <= len(exp) <= 2
     assert exp == [3, 7]
+    assert all(res.items[idx].reason == "mab_exploration" for idx in exp)
+
+
+def test_exploration_slots_follow_slot_start():
+    # slot_start=1: 맨 끝 칸(9)은 신규 상품 자리, 탐색은 그 위 두 칸
+    res = Reranker(RerankConfig(category_field="category_l1", slot_start=1.0)).rerank(random_candidates(), 20, NOW)
+    exp = [idx for idx, i in enumerate(res.items) if i.is_exploration]
+    assert exp == [7, 8]
     assert all(res.items[idx].reason == "mab_exploration" for idx in exp)
 
 

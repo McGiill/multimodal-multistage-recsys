@@ -1,0 +1,62 @@
+{
+  "limit": 300,
+  "strategy": "multistage",
+  "arms": [
+    {
+      "target": "view",
+      "weight": 0.0,
+      "queries": 300,
+      "query_sha256": "b4829d6c019a1df44f7843a5cb74f30897c284d31628666a6a7a96918315a52b",
+      "seed": 42,
+      "hit_rate": 0.07666666666666666,
+      "ndcg": 0.021544793804492302,
+      "coverage": 0.02236,
+      "latency_p95_ms": 26.2648250001007,
+      "passed": {
+        "hit_rate": false,
+        "ndcg": false,
+        "coverage": false
+      }
+    },
+    {
+      "target": "view",
+      "weight": 0.2,
+      "queries": 300,
+      "query_sha256": "b4829d6c019a1df44f7843a5cb74f30897c284d31628666a6a7a96918315a52b",
+      "seed": 42,
+      "hit_rate": 0.08333333333333333,
+      "ndcg": 0.026124550879665698,
+      "coverage": 0.02238,
+      "latency_p95_ms": 27.126806249862057,
+      "passed": {
+        "hit_rate": false,
+        "ndcg": false,
+        "coverage": false
+      }
+    },
+    {
+      "target": "purchase",
+      "weight": 0.0,
+      "queries": 300,
+      "query_sha256": "cbad54b9b7f57ade5314adf07f4b4ae39f99efdfbf3eee4731b397562b1aa581",
+      "seed": 42,
+      "hit_rate": 0.07666666666666666,
+      "ndcg": 0.01860705926481133,
+      "coverage": 0.02186,
+      "latency_p95_ms": 27.142434800032333,
+      "passed": {}
+    },
+    {
+      "target": "purchase",
+      "weight": 0.2,
+      "queries": 300,
+      "query_sha256": "cbad54b9b7f57ade5314adf07f4b4ae39f99efdfbf3eee4731b397562b1aa581",
+      "seed": 42,
+      "hit_rate": 0.07666666666666666,
+      "ndcg": 0.02121937317568093,
+      "coverage": 0.02192,
+      "latency_p95_ms": 27.909716700071385,
+      "passed": {}
+    }
+  ]
+}

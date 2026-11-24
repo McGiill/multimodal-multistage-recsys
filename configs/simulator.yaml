@@ -209,5 +209,9 @@ time:
   mean_seconds: {list: 15, view: 45, cart: 20, purchase: 60}   # 단계별 평균 소요 시간 (lognormal)
   session_gap_min: 30        # 방문 사이 최소 간격 (분)
 
-stream:                      # docker 실시간 로그 생성 (src/simulator/stream.py, 추후 구현)
+stream:                      # API 추천 → 실제 표시 목록 → 가상 고객 반응 → 영속 로그 + Redis
   events_per_sec: 20
+  top_n: 10
+  user_prefix: "stream-"     # 수동 데모 회원(U00005 등)의 클릭 이력과 생성 트래픽을 분리
+  timeout_sec: 15
+  retries: 3

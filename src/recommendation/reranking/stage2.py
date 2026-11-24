@@ -13,28 +13,34 @@ get_rerank_service(models)는 모델 묶음당 한 번만 만든다 (model_loade
 cold-start 인기·트렌딩 목록은 Stage 2 저장소의 조회·구매 기록으로 만든다 (popularity.PopularityLists).
 기준 시각은 사용자 이력과 같은 규칙 (frozen_split: test 시각이면 valid 끝까지의 기록만).
 
-MAB 피드백 (추천 API)
-  record_shown(user_id, result): 진열 즉시 탐색 칸 노출을 세고, 사용자별로 "진열한 탐색 상품 → arm"을 기억
-  record_click(user_id, product_id): 그 사용자가 기억된 탐색 상품을 클릭(view)하면 클릭 1번 (상품당 한 번)
-  사용자별로 마지막 진열의 탐색 칸만 기억한다 (새 진열이 나가면 이전 것은 클릭 0으로 끝난 것으로 본다).
+MAB 피드백
+  추천 API는 반환 결과를 등록하고, 실제 화면 노출/클릭 API가 영속 journal에 집계한다.
+  평가·A/B는 record_recommendation_feedback로 별도 메모리 통계에 피드백을 전달한다.
+  record_shown/record_click은 이전 호출부 호환용이며 서빙 API에서는 사용하지 않는다.
 담당: D
 """
 
 from __future__ import annotations
 
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import replace
 from datetime import datetime, timezone
 from functools import lru_cache
-from typing import Any, Collection, Mapping, Sequence
+from typing import Any
 
 import numpy as np
 import pandas as pd
 
-from src.recommendation.reranking.catalog import load_catalog, prepare_catalog, to_candidates
+from src.recommendation.reranking.catalog import (
+    load_catalog,
+    prepare_catalog,
+    to_candidates,
+)
 from src.recommendation.reranking.items import Candidate, RerankResult
 from src.recommendation.reranking.mab import ExplorationPicker
-from src.recommendation.reranking.popularity import PopularityLists
-from src.recommendation.reranking.reranker import Reranker, RerankConfig
+from src.recommendation.reranking.popularity import PopularityConfig, PopularityLists
+from src.recommendation.reranking.reranker import RerankConfig, Reranker
+from src.recommendation.runtime_config import resolve_runtime_config
 
 STAGE2_REASON = "cvr"  # 기본값. 서빙은 모델 묶음의 ranking.objective (ctr / cvr)를 쓴다 (get_rerank_service)
 POPULAR_REASON = "popular"
@@ -93,6 +99,17 @@ class RerankService:
         # 요청마다 표를 조회하지 않도록 번호 순서로 미리 꺼내 둔다 (300개 변환 1ms 미만)
         self._rows = to_candidates(self.item_ids, np.zeros(len(self.item_ids)), self.catalog)
         self.reranker = Reranker(config or RerankConfig.from_recommend_config(), explorer)
+        # 전체 고객 단위 다양성(aggregate.py): 번호별 디자인 코드와 이 서비스가 돌려준 추천 목록의 상품별 노출 횟수
+        design = self.catalog["product_code"].where(self.catalog["product_code"].notna(), pd.Series(self.item_ids, index=self.catalog.index)) \
+            if "product_code" in self.catalog else pd.Series(self.item_ids, index=self.catalog.index)
+        self.design_codes = np.r_[-1, pd.factorize(design.astype(str))[0]].astype(np.int64)
+        self.exposure = np.zeros(len(self.item_ids) + 1, np.int64)
+        self._index_of = {p: i + 1 for i, p in enumerate(self.item_ids)}
+
+    def record_exposure(self, product_ids: Sequence[str]) -> None:
+        """돌려준 추천 목록의 상품 노출 횟수 +1 (다양성 칸 선택용, MAB 통계와 별개)."""
+        idx = [self._index_of[p] for p in product_ids if p in self._index_of]
+        np.add.at(self.exposure, idx, 1)
 
     @property
     def config(self) -> RerankConfig:
@@ -121,14 +138,19 @@ class RerankService:
         train_end, valid_end = self.history_cutoffs
         return min(now, train_end if now < valid_end else valid_end)
 
-    def cold_start_lists(self, now: float, k: int) -> tuple[list[Candidate], list[Candidate]]:
+    def cold_start_lists(self, now: float, k: int, allowed=None) -> tuple[list[Candidate], list[Candidate]]:
         """cold-start 인기·트렌딩 Candidate 목록 (각 최대 max(list_size, k)개). 목록이 없으면 빈 목록."""
         if self.popularity is None:
             return [], []
         k = max(self.popularity.config.list_size, k)
         at = self.history_time(now)
-        pop_ids, pop_scores = self.popularity.popular(at, k)
-        trend_ids, trend_scores = self.popularity.trending(at, k)
+        fetch = len(self.item_ids) if allowed is not None else k
+        pop_ids, pop_scores = self.popularity.popular(at, fetch)
+        trend_ids, trend_scores = self.popularity.trending(at, fetch)
+        if allowed is not None:
+            pop_keep, trend_keep = allowed[pop_ids], allowed[trend_ids]
+            pop_ids, pop_scores = pop_ids[pop_keep][:k], pop_scores[pop_keep][:k]
+            trend_ids, trend_scores = trend_ids[trend_keep][:k], trend_scores[trend_keep][:k]
         return (self.candidates(pop_ids, pop_scores, POPULAR_REASON),
                 self.candidates(trend_ids, trend_scores, TRENDING_REASON))
 
@@ -152,6 +174,7 @@ class RerankService:
         trending: Sequence[Candidate] = (),
         new_ids: Sequence[int] | np.ndarray = (),
         new_scores: Sequence[float] | np.ndarray = (),
+        allowed: np.ndarray | None = None,
     ) -> RerankResult:
         """Stage 2 출력(후보 전체, top_n으로 자르기 전) → 최종 Top-N.
 
@@ -162,7 +185,7 @@ class RerankService:
         n = self.config.top_n if top_n is None else top_n
         history = history_count(state)
         if not popular and not trending and history < self.config.min_history:
-            popular, trending = self.cold_start_lists(now, n)
+            popular, trending = self.cold_start_lists(now, n, allowed)
             if not popular and not trending:
                 # 인기·트렌딩 목록이 없으면 cold-start 사용자에게 빈 진열이 나가므로 Stage 2 순서로 채운다
                 history = self.config.min_history
@@ -180,6 +203,20 @@ class RerankService:
             new_item_pool=new_pool,
             top_n=n,
         )
+
+    def exploration_arms_of(self, items) -> dict[str, str]:
+        """반환/표시 목록의 MAB 슬롯만 추출. 신상품 슬롯은 탐색 보상에서 제외."""
+        return {item.product_id: str(self.catalog.at[item.product_id, self.config.mab.arm_field])
+                for item in items if item.reason == "mab_exploration" and item.product_id in self.catalog.index}
+
+    def record_recommendation_feedback(self, items, clicked_ids: Collection[str]) -> int:
+        """격리된 시뮬레이션·평가에서 실제 표시 목록의 노출/클릭을 한 번에 기록."""
+        record = getattr(self.reranker.explorer, "record_feedback", None)
+        arms = self.exploration_arms_of(items)
+        if record is not None:
+            for pid, arm in arms.items():
+                record(arm, pid in clicked_ids)
+        return len(arms) if record is not None else 0
 
     def record_feedback(self, result: RerankResult, clicked_ids: Collection[str]) -> int:
         """진열한 MAB 탐색 칸의 클릭 여부를 기록한다 (Reranker.record_feedback)."""
@@ -215,15 +252,17 @@ def get_rerank_service(models: Any) -> RerankService:
     load_models가 같은 버전에 같은 객체를 돌려주므로 MAB 통계가 요청 사이에 유지된다.
     """
     store = models.store
-    return RerankService(store.item_ids, store.products, product_codes=load_product_codes(),
-                         popularity=build_popularity(store),
+    runtime_cfg = resolve_runtime_config(getattr(models, "cfg", None))
+    config = RerankConfig.from_recommend_config(runtime_cfg)
+    return RerankService(store.item_ids, store.products, config=config, product_codes=load_product_codes(),
+                         popularity=build_popularity(store, PopularityConfig.from_recommend_config(runtime_cfg)),
                          history_cutoffs=store.metadata.get("history_cutoffs"),
                          stage2_reason=getattr(models, "objective", STAGE2_REASON))
 
 
-def build_popularity(store: Any) -> PopularityLists:
+def build_popularity(store: Any, config: PopularityConfig | None = None) -> PopularityLists:
     """Stage 2 FeatureStore의 저장된 기록(시간순, _time / _pid) → 인기·트렌딩 목록."""
     ev = store.events
     view, buy = ev[ev["event_type"] == "view"], ev[ev["event_type"] == "purchase"]
     return PopularityLists(view["_time"].to_numpy(), view["_pid"].to_numpy(),
-                           buy["_time"].to_numpy(), buy["_pid"].to_numpy(), len(store.item_ids))
+                           buy["_time"].to_numpy(), buy["_pid"].to_numpy(), len(store.item_ids), config=config)

@@ -1,0 +1,41 @@
+{
+  "k": 50,
+  "n_queries": 300,
+  "with_session": 191,
+  "target": "next viewed product (test split, examples.npz)",
+  "target_type": "view",
+  "targets": {
+    "hit_rate": 0.2,
+    "ndcg": 0.08,
+    "coverage": 0.2
+  },
+  "seed": 42,
+  "input_sha256": {
+    "/app/artifacts/models/stage12-ctcvr-v20261110c/examples.npz": "aec5178f5a9be238e95205ec286066539a7079b1050d514e33df040f56e13b92",
+    "/app/data/splits/test_events.parquet": "04c19d3c799f777df42af242afb7dfc88b69099f66a52ba5567178a006250d31"
+  },
+  "model_version": "stage12-ctcvr-v20261110c",
+  "history_source": "explicit offline prefixes; no Redis reads",
+  "latency_scope": "in-process strategy only; excludes HTTP and Redis",
+  "session_weight": 0.0,
+  "session": {
+    "live_history": true,
+    "blend_candidates": true
+  },
+  "stage_chain": [
+    "multistage"
+  ],
+  "measured_at": "2026-11-12T02:49:28",
+  "multistage": {
+    "hit_rate": 0.07666666666666666,
+    "ndcg": 0.021544793804492302,
+    "coverage": 0.02236,
+    "latency_p95_ms": 26.2648250001007,
+    "passed": {
+      "hit_rate": false,
+      "ndcg": false,
+      "coverage": false
+    }
+  },
+  "evaluated_query_sha256": "b4829d6c019a1df44f7843a5cb74f30897c284d31628666a6a7a96918315a52b"
+}

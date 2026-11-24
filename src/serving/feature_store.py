@@ -38,10 +38,12 @@ class MemoryFeatureStore:
         self.recent_views_len = recent_views_len
         self._recent: dict[str, deque[str]] = {}
         self._sessions: dict[str, list[str]] = {}
+        self._events: set[str] = set()
 
     def push_event(self, event: Event) -> None:
-        if not is_click(event):
+        if not is_click(event) or event.event_id in self._events:
             return
+        self._events.add(event.event_id)
         self._recent.setdefault(event.user_id, deque(maxlen=self.recent_views_len)).append(event.product_id)
         self._sessions.setdefault(event.session_id, []).append(event.product_id)
 
@@ -67,12 +69,18 @@ class RedisFeatureStore:
         if not is_click(event):
             return
         recent, session = RECENT_KEY.format(event.user_id), SESSION_KEY.format(event.session_id)
-        pipe = self.client.pipeline(transaction=False)
-        pipe.rpush(recent, event.product_id)
-        pipe.ltrim(recent, -self.recent_views_len, -1)
-        pipe.rpush(session, event.product_id)
-        pipe.expire(session, self.session_ttl_sec)
-        pipe.execute()
+        # journal 저장 후 Redis 장애가 나도 같은 event_id로 재시도할 수 있도록 원자적으로 처리.
+        self.client.eval("""
+            if redis.call('SISMEMBER', KEYS[3], ARGV[1]) == 1 then return 0 end
+            redis.call('SADD', KEYS[3], ARGV[1])
+            redis.call('EXPIRE', KEYS[3], ARGV[4])
+            redis.call('RPUSH', KEYS[1], ARGV[2])
+            redis.call('LTRIM', KEYS[1], -tonumber(ARGV[3]), -1)
+            redis.call('RPUSH', KEYS[2], ARGV[2])
+            redis.call('EXPIRE', KEYS[2], ARGV[4])
+            return 1
+        """, 3, recent, session, f"feature_events:{event.session_id}", event.event_id,
+                         event.product_id, self.recent_views_len, self.session_ttl_sec)
 
     def get_recent_views(self, user_id: str) -> list[str]:
         return self.client.lrange(RECENT_KEY.format(user_id), 0, -1)

@@ -8,9 +8,9 @@
           → API 파싱·직렬화까지 포함한 서버 처리 시간. 기준 p95 < 200ms
 - feature: Feature Store 조회 (세션 클릭 + 최근 조회 상품, 요청 1번에 필요한 만큼). 기준 p95 < 10ms
            REDIS_HOST가 있으면 Redis, 없으면 메모리 (docker compose up -d redis 후 REDIS_HOST=localhost)
-- 추천·후보 측정은 각 모듈 구현 후 추가
+- recommend: 추천 API 파싱·특징 조회·순위 계산·응답 등록·직렬화 포함 (TestClient, TCP 전송 제외)
 
-결과: artifacts/metrics/latency_<target>.json (실측 환경 포함 → docs 리포트에 기록)
+결과: artifacts/metrics/latency_<target>_<timestamp>.json (기존 결과는 덮어쓰지 않는다)
 """
 
 from __future__ import annotations
@@ -21,11 +21,13 @@ import json
 import os
 import platform
 import subprocess
+import tempfile
 import time
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import numpy as np
 import pandas as pd
@@ -113,9 +115,9 @@ def bench_feature() -> dict[str, Any]:
     from src.serving.feature_store import RedisFeatureStore, get_feature_store
 
     store = get_feature_store()
-    user, session = "bench_user", "bench_session"
+    user, session = f"bench-{uuid4().hex}", f"bench-{uuid4().hex}"
     for i in range(load_config("serving")["redis"]["recent_views_len"]):
-        store.push_event(Event(event_id=f"bench{i}", user_id=user, session_id=session, event_type="view",
+        store.push_event(Event(event_id=f"{session}-{i}", user_id=user, session_id=session, event_type="view",
                                product_id=f"hm_{i:010d}", timestamp=datetime.now()))
 
     def lookup(_: int) -> None:
@@ -124,15 +126,66 @@ def bench_feature() -> dict[str, Any]:
 
     result = {"store": type(store).__name__, "lookup": measure(lookup)}
     if isinstance(store, RedisFeatureStore):
-        store.client.delete(f"recent_views:{user}", f"session_clicks:{session}")
+        store.client.delete(f"recent_views:{user}", f"session_clicks:{session}", f"feature_events:{session}")
     return result
+
+
+def bench_recommend() -> dict[str, Any]:
+    """실제 모델과 특징 저장소를 쓰되 데모 이력·영속 저널에 측정 데이터를 남기지 않는다."""
+    from datetime import timezone
+
+    from fastapi.testclient import TestClient
+
+    from src.common.schemas import Event
+    from src.recommendation.reranking.stage2 import get_rerank_service
+    from src.serving.event_log import get_event_log
+    from src.serving.feature_store import RedisFeatureStore, get_feature_store
+    from src.serving.model_loader import get_recommendation_models
+
+    models, features = get_recommendation_models(), get_feature_store()
+    user, session = f"bench-{uuid4().hex}", f"bench-{uuid4().hex}"
+    at = datetime.now(timezone.utc)
+    old_log_path = os.environ.get("EVENT_LOG_PATH")
+    try:
+        with tempfile.TemporaryDirectory(prefix="recommend-bench-") as temporary:
+            os.environ["EVENT_LOG_PATH"] = str(Path(temporary) / "events.sqlite3")
+            get_event_log.cache_clear()
+            client = TestClient(app)
+
+            def request(_: int) -> None:
+                response = client.get("/api/recommend", params={
+                    "user_id": user, "session_id": session, "top_n": 50, "at": at.isoformat(),
+                })
+                response.raise_for_status()
+
+            cold = measure(request)
+            # 실제 상품 20개를 별도 측정 사용자에게만 넣어 세션 경로도 측정한다.
+            for i, pid in enumerate(models.store.item_ids[:20]):
+                features.push_event(Event(event_id=f"{session}-{i}", user_id=user, session_id=session,
+                                          event_type="view", product_id=pid, timestamp=at))
+            with_session = measure(request)
+            return {"model_version": models.folder.name, "store": type(features).__name__, "top_n": 50,
+                    "scope": "TestClient server processing including parsing, feature lookup, journal and serialization; excludes TCP and model loading",
+                    "prediction_at": at.isoformat(), "user_profile": "unknown isolated benchmark user",
+                    "session_inputs": "20 known products; isolated benchmark keys",
+                    "warmup": 10, "requests_per_scenario": 100, "cold": cold, "session": with_session,
+                    "passed": max(cold["p95_ms"], with_session["p95_ms"]) < 200}
+    finally:
+        if old_log_path is None:
+            os.environ.pop("EVENT_LOG_PATH", None)
+        else:
+            os.environ["EVENT_LOG_PATH"] = old_log_path
+        get_event_log.cache_clear()
+        get_rerank_service.cache_clear()
+        if isinstance(features, RedisFeatureStore):
+            features.client.delete(f"recent_views:{user}", f"session_clicks:{session}", f"feature_events:{session}")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--target", choices=["search", "feature"], default="search")
+    parser.add_argument("--target", choices=["search", "feature", "recommend"], default="search")
     parser.add_argument("--model", default=None, help="검색 모델 (기본: configs/search.yaml)")
-    parser.add_argument("--out", default=None, help="저장 경로 (기본: artifacts/metrics/latency_<target>[_<모델>].json)")
+    parser.add_argument("--out", default=None, help="새 결과 저장 경로 (기본: 시각을 붙인 JSON, 기존 파일 덮어쓰기 금지)")
     args = parser.parse_args()
 
     result = {"target": args.target, "measured_at": datetime.now().isoformat(timespec="seconds"), **machine_info()}
@@ -140,14 +193,18 @@ def main() -> None:
         result |= bench_search(args.model)
     elif args.target == "feature":
         result |= bench_feature()
+    elif args.target == "recommend":
+        result |= bench_recommend()
 
     suffix = f"_{model_slug(result['model_name'])}" if args.model and args.target == "search" else ""
-    out = ROOT / (args.out or Path(load_config("search")["paths"]["metrics_dir"]) / f"latency_{args.target}{suffix}.json")
+    stamp = datetime.now().strftime("%Y%m%dT%H%M%S%f")
+    out = ROOT / (args.out or Path(load_config("search")["paths"]["metrics_dir"]) / f"latency_{args.target}{suffix}_{stamp}.json")
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    with out.open("x", encoding="utf-8") as handle:
+        json.dump(result, handle, ensure_ascii=False, indent=2)
 
     print(f"[latency] {result['cpu']} / device={result.get('device')} / index={result.get('index')}")
-    for mode in ("text", "image", "hybrid"):
+    for mode in ("text", "image", "hybrid", "cold", "session"):
         if mode in result:
             r = result[mode]
             print(f"  {mode:6s} p50 {r['p50_ms']:7.1f}ms  p95 {r['p95_ms']:7.1f}ms  (기준 200ms)")

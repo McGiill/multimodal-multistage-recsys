@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
-from src.common.config import load_config
-from src.common.schemas import Event, EventType
+from src.common.schemas import Event, EventType, ImpressionRequest
+from src.serving.event_log import get_event_log
 from src.serving.feature_store import get_feature_store
 
 router = APIRouter()
@@ -13,21 +13,30 @@ router = APIRouter()
 
 @router.post("/events")
 def ingest_event(event: Event) -> dict[str, str]:
-    get_feature_store().push_event(event)
-    if event.event_type == EventType.VIEW and event.product_id:
-        record_exploration_click(event.user_id, event.product_id)
-    return {"status": "accepted"}
-
-
-def record_exploration_click(user_id: str, product_id: str) -> None:
-    """마지막 추천의 MAB 탐색 칸 상품을 클릭했으면 arm 통계에 클릭 1번 (multistage 전략만)."""
-    if load_config("recommend")["strategy"] != "multistage":
-        return
-    from src.recommendation.reranking.stage2 import get_rerank_service
-    from src.serving.model_loader import get_recommendation_models
-
     try:
-        models = get_recommendation_models()
-    except FileNotFoundError:
-        return  # 추천 모델이 없으면 진열된 탐색 칸도 없다
-    get_rerank_service(models).record_click(user_id, product_id)
+        log = get_event_log()
+        inserted = log.append_event(event)
+        if log.feature_pending(event.event_id):
+            get_feature_store().push_event(event)
+            log.mark_feature_delivered(event.event_id)
+        if event.event_type == EventType.VIEW and event.product_id:
+            record_exploration_click(event)
+        return {"status": "accepted" if inserted else "duplicate"}
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@router.post("/impressions")
+def ingest_impression(impression: ImpressionRequest) -> dict[str, str]:
+    """필터·중복 제거·화면 표시 이후의 목록만 노출로 확정한다."""
+    log = get_event_log()
+    try:
+        inserted = log.append_impression(impression, request_id=impression.recommendation_id)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return {"status": "accepted" if inserted else "duplicate"}
+
+
+def record_exploration_click(event: Event) -> None:
+    """실제 노출 ID에 귀속된 클릭만 1회 보상한다. 다른 화면/중복 클릭은 제외."""
+    get_event_log().claim_click(event)

@@ -256,7 +256,7 @@ def test_api_session_clicks_reflected(trained, monkeypatch):
     calls = []
     merge = session.merge_candidates
     monkeypatch.setattr(session, "merge_candidates", lambda *a, **k: calls.append(a[0]) or merge(*a, **k))
-    monkeypatch.setattr(pipeline, "get_session_model", lambda: session)
+    monkeypatch.setattr(pipeline, "get_session_model", lambda *_: session)
     from src.serving.main import app
 
     category = models.store.products.set_index("product_id")["category_l2"]
@@ -305,11 +305,24 @@ def test_api_cold_start_click_feedback_and_baselines(trained, monkeypatch):
         store = get_rerank_service(get_recommendation_models()).reranker.explorer.store
         arm = category[pid]
         before = store.get([arm])[arm]
+        assert before.shown == 0  # API가 반환한 것만으로는 노출이 아니다.
+        impression = {"impression_id": "I-visible", "recommendation_id": recs["recommendation_id"],
+                      "user_id": "U00001", "session_id": "S9", "timestamp": at,
+                      "source": "home", "context": "recommend:all", "product_ids": [pid], "clicked_ids": []}
+        assert client.post("/api/impressions", json=impression).status_code == 200
+        assert client.post("/api/impressions", json=impression).json()["status"] == "duplicate"
+        before = store.get([arm])[arm]
+        assert before.shown == 1
         event = {"event_id": "E1", "user_id": "U00001", "session_id": "S9", "event_type": "view",
-                 "product_id": pid, "timestamp": at}
+                 "product_id": pid, "timestamp": at, "impression_id": "I-visible"}
         assert client.post("/api/events", json=event).status_code == 200
+        assert client.post("/api/events", json=event).json()["status"] == "duplicate"
+        assert client.post("/api/events", json=event | {"event_id": "E1-again"}).status_code == 200
         after = store.get([arm])[arm]
         assert after.clicks == before.clicks + 1 and after.shown == before.shown
+        hidden_pid = next(r["product_id"] for r in recs["recommendations"] if r["product_id"] != pid)
+        assert client.post("/api/events", json=event | {"event_id": "E-hidden", "product_id": hidden_pid}).status_code == 422
+        assert client.post("/api/events", json=event | {"event_id": "E-other", "user_id": "U00002"}).status_code == 422
 
         created = models.store.products.set_index("product_id")["created_at"]
         for name, reason in [("popularity", "popular"), ("recency", "recency")]:

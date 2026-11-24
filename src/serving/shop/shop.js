@@ -23,7 +23,7 @@ const CONFIG = {
 };
 
 const AUDIENCE = { all: "전체", women: "여성", men: "남성", kids: "아동" };
-const REASON = { ctcvr: "맞춤 추천", ctr: "맞춤 추천", cvr: "맞춤 추천", mab_exploration: "새로운 발견", new_item: "신상품", popular: "인기", trending: "급상승" };
+const REASON = { ctcvr: "맞춤 추천", ctr: "맞춤 추천", cvr: "맞춤 추천", ctcvr_session: "최근 관심 반영", ctr_session: "최근 관심 반영", cvr_session: "최근 관심 반영", mab_exploration: "새로운 발견", new_item: "신상품", popular: "인기", trending: "급상승" };
 const COLD_REASONS = new Set(["popular", "trending"]);
 const SEARCH_TYPE = { text: "텍스트 검색", image: "이미지 검색", hybrid: "사진 + 문장 검색" };
 const BASIS = {
@@ -125,22 +125,27 @@ const imageUrl = pid => `/api/products/${encodeURIComponent(pid)}/image`;
 /** 추천. exclude(같은 화면의 검색 결과 등)와 "관심 없음" 상품은 빼고 recTopN개를 채운다. */
 async function recommend(exclude = new Set()) {
   const skip = new Set([...exclude, ...state.hidden]);
+  const owner = { userId: state.userId, sessionId: state.sessionId, audience: searchAudience() };
   const params = new URLSearchParams({
     user_id: state.userId, session_id: state.sessionId, at: CONFIG.demoAt,
     top_n: String(Math.min(100, CONFIG.recTopN + skip.size)),
+    audience: owner.audience,
   });
   const res = await api(`/api/recommend?${params}`);
   res.shown = res.recommendations.filter(r => !skip.has(r.product_id)).slice(0, CONFIG.recTopN);
   res.isCold = res.recommendations.some(r => COLD_REASONS.has(r.reason));
+  res.owner = owner;
   return res;
 }
 
 /** 상품 클릭 = 관심. 세션 클릭으로 쌓여서 다음 추천에 반영된다 (MAB 탐색 칸이면 클릭 기록). */
-async function logView(pid, source) {
+async function logView(pid, source, impressionId = null,
+  owner = { userId: state.userId, sessionId: state.sessionId }) {
   await post("/api/events", {
-    event_id: `web-${randomHex(16)}`, user_id: state.userId, session_id: state.sessionId,
-    event_type: "view", product_id: pid, timestamp: new Date().toISOString(), source,
+    event_id: `web-${randomHex(16)}`, user_id: owner.userId, session_id: owner.sessionId,
+    event_type: "view", product_id: pid, timestamp: new Date().toISOString(), source, impression_id: impressionId,
   });
+  if (state.userId !== owner.userId || state.sessionId !== owner.sessionId) return;
   state.views += 1;
   state.recent = [...state.recent.filter(p => p !== pid), pid].slice(-20);
   saveState();
@@ -156,6 +161,8 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": 
 const price = p => (p == null ? "" : `$${Number(p).toFixed(2)}`);
 
 function newPage(html) {
+  for (const observer of exposureObservers) observer.disconnect();
+  exposureObservers.clear();
   const page = document.createElement("div");
   page.innerHTML = html;
   $app.replaceChildren(page);
@@ -179,7 +186,7 @@ function card(p, { source, reason = null, hideable = false } = {}) {
   const pid = p.product_id;
   const meta = [p.category, p.color].filter(Boolean).join(" · ");
   const open = `href="#/product/${encodeURIComponent(pid)}" data-view="${esc(pid)}" data-source="${esc(source)}"`;
-  return `<article class="card">
+  return `<article class="card" data-product-id="${esc(pid)}">
     <a class="card-media" ${open} tabindex="-1" aria-hidden="true">
       <img src="${imageUrl(pid)}" alt="" loading="lazy">
       ${reason ? `<span class="badge badge-${esc(reason)}">${esc(REASON[reason] || reason)}</span>` : ""}
@@ -198,6 +205,61 @@ async function withInfo(items) {
   return items.map((item, k) => ({ ...(infos[k] || {}), ...item }));
 }
 
+// 실제 뷰포트에 절반 이상 나타난 카드만 노출로 기록한다. 반환·숨김·중복제거 상품은 집계하지 않는다.
+const exposureObservers = new Set();
+function trackImpressions(container, { source = "home", context = "", recommendationId = null,
+  owner = { userId: state.userId, sessionId: state.sessionId } } = {}) {
+  if (!container?.isConnected) return;
+  const cards = [...container.querySelectorAll(".card[data-product-id]")];
+  const eligible = card => container.isConnected && card.isConnected && !card.hidden
+    && !card.classList.contains("leaving") && !state.hidden.includes(card.dataset.productId)
+    && state.userId === owner.userId && state.sessionId === owner.sessionId;
+  function send(record) {
+    if (!record.promise) {
+      record.promise = post("/api/impressions", record.payload);
+      // 응답만 유실되어도 같은 ID로 재전송해 서버가 중복을 제거할 수 있게 한다.
+      record.promise.catch(() => { record.promise = null; });
+    }
+    return record.promise;
+  }
+  function record(cardsToShow) {
+    const visible = cardsToShow.filter(eligible);
+    const retries = [...new Set(visible.map(card => card._exposureRecord).filter(Boolean))];
+    const fresh = visible.filter(card => !card._exposureRecord);
+    const pending = retries.map(send);
+    if (!fresh.length) return Promise.all(pending);
+    const payload = {
+      impression_id: `web-imp-${randomHex(24)}`, user_id: owner.userId, session_id: owner.sessionId,
+      timestamp: new Date().toISOString(), source, context,
+      product_ids: [...new Set(fresh.map(card => card.dataset.productId))], clicked_ids: [],
+      recommendation_id: recommendationId,
+    };
+    const record = { payload, promise: null };
+    fresh.forEach(card => { card._exposureRecord = record; });
+    // 클릭 시 같은 Promise를 기다리므로 노출보다 먼저 클릭이 도착하지 않는다.
+    return Promise.all([...pending, send(record)]);
+  }
+  cards.forEach(card => { card._recordExposure = () => record([card]); });
+  if (!("IntersectionObserver" in window)) return; // 클릭 시에도 실제 표시를 확인해 기록한다.
+  const observer = new IntersectionObserver(entries => {
+    const shown = new Set(entries.filter(e => e.isIntersecting && e.intersectionRatio >= 0.5).map(e => e.target));
+    const visible = cards.filter(card => shown.has(card)); // DOM의 표시 순서 유지
+    if (visible.length) record(visible).catch(() => {});
+  }, { threshold: [0.5] });
+  exposureObservers.add(observer);
+  cards.forEach(card => observer.observe(card));
+}
+
+async function exposureForClick(link) {
+  const card = link.closest(".card");
+  if (!card?._recordExposure) return null;
+  if (!card._exposureRecord?.promise) await card._recordExposure();
+  const record = card._exposureRecord;
+  if (!record) throw new Error("상품 노출을 기록하지 못했어요.");
+  await record.promise;
+  return record.payload.impression_id;
+}
+
 function showError(el, err) {
   if (!el) return;
   const hint = err.status === 503 ? " 추천 모델을 먼저 학습해 주세요 (make docker-train)." : "";
@@ -214,9 +276,12 @@ async function fillRecommendations(page, exclude, { name = "rec", captionPrefix 
   try {
     const res = await recommend(exclude);
     const items = await withInfo(res.shown);
+    if (!page.isConnected || state.userId !== res.owner.userId || state.sessionId !== res.owner.sessionId) return null;
     slot(page, name).innerHTML = items.length
       ? items.map(i => card(i, { source: "home", reason: i.reason, hideable: true })).join("")
       : `<p class="caption">추천할 상품이 없어요.</p>`;
+    trackImpressions(slot(page, name), { owner: res.owner, source: "home",
+      context: `recommend:${res.owner.audience}`, recommendationId: res.recommendation_id });
     const parts = [captionPrefix, latencyText(res)];
     if (exclude.size) parts.push("이 화면에 나온 상품은 빼고 추천");
     slot(page, `${name}-caption`).textContent = parts.filter(Boolean).join(" · ");
@@ -231,7 +296,7 @@ async function fillRecommendations(page, exclude, { name = "rec", captionPrefix 
 async function similarToRecent() {
   const basis = state.recent.slice(-CONFIG.recentBasis).reverse();
   const lists = await Promise.all(basis.map(pid =>
-    api(`/api/products/${encodeURIComponent(pid)}/similar?top_k=${CONFIG.similarTopK}`).then(r => r.results).catch(() => [])));
+    api(`/api/products/${encodeURIComponent(pid)}/similar?top_k=${CONFIG.similarTopK}${state.audience && state.audience !== "all" ? `&audience=${encodeURIComponent(state.audience)}` : ""}`).then(r => r.results).catch(() => [])));
   const seen = new Set(state.recent);
   const items = [];
   for (let k = 0; k < CONFIG.similarTopK && items.length < CONFIG.recTopN; k++) {
@@ -262,6 +327,7 @@ async function renderHome() {
     slot(page, "similar").innerHTML = items.map(i => card(i, { source: "similar" })).join("")
       || `<p class="caption">비슷한 상품을 찾지 못했어요.</p>`;
     slot(page, "similar-caption").textContent = `최근 본 상품 ${basis.length}개와 사진이 비슷한 상품 · 같은 고객층`;
+    trackImpressions(slot(page, "similar"), { source: "browse", context: `recent-similar:${searchAudience()}` });
   }
   const res = await fillRecommendations(page, shown);
   if (!res) return;
@@ -281,6 +347,7 @@ async function renderHome() {
     slot(page, "recent-block").hidden = false;
     const items = await withInfo(recent.map(pid => ({ product_id: pid })));
     slot(page, "recent").innerHTML = items.map(i => card({ ...i, category: null, color: null }, { source: "home" })).join("");
+    trackImpressions(slot(page, "recent"), { source: "browse", context: "recent-history" });
   }
 }
 
@@ -293,7 +360,7 @@ function heroTitle() {
 async function renderSurvey() {
   if (!SURVEY[state.audience]) {
     const page = newPage(`
-      <div class="hero"><h1>어떤 옷을 찾으세요?</h1><p>취향 조사를 시작할 고객층을 골라 주세요. 검색할 때도 이 고객층 상품만 보여드려요.</p></div>
+      <div class="hero"><h1>어떤 옷을 찾으세요?</h1><p>취향 조사를 시작할 고객층을 골라 주세요. 검색과 추천에도 이 고객층을 적용해요.</p></div>
       <div class="choice-row">${["women", "men", "kids"].map(a =>
         `<button class="choice" type="button" data-audience="${a}">${AUDIENCE[a]}</button>`).join("")}</div>`);
     page.addEventListener("click", e => {
@@ -397,6 +464,7 @@ async function renderSearch(query) {
       : `<p class="caption">검색 결과가 없어요. 다른 표현이나 고객층(${esc(AUDIENCE[searchAudience()])})을 바꿔 보세요.</p>`;
     slot(page, "results-caption").textContent =
       `${SEARCH_TYPE[res.search_type] || res.search_type} · ${AUDIENCE[searchAudience()]} · ${Math.round(res.latency_ms)}ms`;
+    trackImpressions(slot(page, "results"), { source: "search", context: query });
   } catch (err) {
     showError(slot(page, "results"), err);
   }
@@ -436,6 +504,7 @@ async function renderPhoto() {
           : `<p class="caption">조건에 맞는 상품이 없어요.</p>`}</div></section>`;
     });
     slot(page, "groups").innerHTML = groups.join("") || `<p class="caption">사진에서 찾은 상품이 없어요.</p>`;
+    trackImpressions(slot(page, "groups"), { source: "search", context: `photo:${photo.query || ""}` });
     slot(page, "photo").insertAdjacentHTML("beforeend", boxes.map(b => {
       const [x1, y1, x2, y2] = b.box;
       const pos = `left:${(x1 / photo.width) * 100}%;top:${(y1 / photo.height) * 100}%;` +
@@ -471,11 +540,12 @@ async function renderProduct(pid) {
 
   const shown = new Set([pid]);
   try {
-    const sim = await api(`/api/products/${encodeURIComponent(pid)}/similar?top_k=${CONFIG.similarTopK}`);
+    const sim = await api(`/api/products/${encodeURIComponent(pid)}/similar?top_k=${CONFIG.similarTopK}${state.audience && state.audience !== "all" ? `&audience=${encodeURIComponent(state.audience)}` : ""}`);
     sim.results.forEach(r => shown.add(r.product_id));
     slot(page, "similar").innerHTML = sim.results.map(r => card(r, { source: "similar" })).join("")
       || `<p class="caption">비슷한 상품이 없어요.</p>`;
     slot(page, "similar-caption").textContent = `사진이 비슷한 다른 디자인 · 같은 고객층 · ${Math.round(sim.latency_ms)}ms`;
+    trackImpressions(slot(page, "similar"), { source: "browse", context: `similar:${pid}` });
   } catch (err) {
     showError(slot(page, "similar"), err);
   }
@@ -566,12 +636,15 @@ document.addEventListener("click", async e => {
   if (view) {
     e.preventDefault();
     const pid = view.dataset.view;
+    const owner = { userId: state.userId, sessionId: state.sessionId };
     try {
-      await logView(pid, view.dataset.source || "home");
+      const impressionId = await exposureForClick(view);
+      if (state.userId !== owner.userId || state.sessionId !== owner.sessionId) return;
+      await logView(pid, view.dataset.source || "home", impressionId, owner);
     } catch (err) {
       toast(`클릭을 기록하지 못했어요: ${err.message}`);
     }
-    navigate(`#/product/${encodeURIComponent(pid)}`);
+    if (state.userId === owner.userId && state.sessionId === owner.sessionId) navigate(`#/product/${encodeURIComponent(pid)}`);
     return;
   }
   const hide = e.target.closest("[data-hide]");
