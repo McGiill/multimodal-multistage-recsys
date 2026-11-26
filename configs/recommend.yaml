@@ -1,5 +1,8 @@
 seed: 42
-version: stage12-final-v20261124   # 선택용 묶음 (train만 학습). 서빙·test 평가는 refit 묶음 (<version>-refit, 아래 refit)
+version: stage12-neg32-v20261124   # 선택용 묶음 (train만 학습). 서빙·test 평가는 refit 묶음 (<version>-refit, 아래 refit)
+                                   # 2026-11-24 (2): Two-Tower 오답 4 → 32개로 선택용·재학습·창 A 전 묶음 전부 다시 학습
+                                   #   (DeepFM·두 기간 최종 순위 모델 포함, Stage 3 설정은 아래 그대로). test: Recall@300 0.298 → 0.304,
+                                   #   HitRate 0.5245, NDCG 0.0804, Coverage 0.210, AUC 0.779. 이전 서빙: stage12-final-v20261124
                                    # 2026-11-24: Stage 1·2 동일. 최종 순위 모델을 두 기간(창 A 03-05~03-13 + valid)으로 학습,
                                    #   Stage 3 = 소분류 연속 제한·탐색 1칸·다양성 3칸. 정직한 검증(창 A 전 묶음 → valid)으로 골랐다.
                                    #   두 기간 학습은 make train에 아직 없다 (실험 스크립트로 학습, final_ranker.json에 기록)
@@ -17,7 +20,8 @@ strategy: multistage      # multistage | two_tower_only | popularity | recency  
 candidate:
   embedding_dim: 64
   n_candidates: 300
-  negative_ratio: 4       # 랜덤 네거티브 1:4
+  negative_ratio: 32      # 랜덤 네거티브 1:32 (이전 1:4). 정답 1개를 오답 32개와 비교해 비슷한 상품끼리 구분하게 학습
+                          #   valid 사용자 단위 Recall@300 0.306 → 0.312 (2026-11-24), epoch당 학습 시간 약 2배
   history_len: 50         # 이전 20. valid 마지막 2일 Recall@300 0.365 → 0.368 (2026-11-19 실험), DeepFM 이력 특징도 같은 길이
   epochs: 10              # 이전 5. valid 조회 단위 Recall@300 0.290(5) → 0.295(9 epoch 최고)
   lr: 0.001

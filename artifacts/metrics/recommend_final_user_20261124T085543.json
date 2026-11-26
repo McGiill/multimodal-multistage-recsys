@@ -1,0 +1,92 @@
+{
+  "definition": "user-level: one Top-k list per user at the user's first event in the split (no session clicks, history frozen at split start); truth = all items the user viewed/carted/purchased in the split",
+  "target_type": "user",
+  "split": "test",
+  "k": 50,
+  "n_users": 8036,
+  "n_buyers": 1065,
+  "targets": {
+    "hit_rate": 0.2,
+    "ndcg": 0.08,
+    "coverage": 0.2
+  },
+  "seed": 42,
+  "model_version": "stage12-neg32-v20261124-refit",
+  "stage1_recall@300": 0.3039702018432899,
+  "stage1_target": 0.3,
+  "history_source": "frozen bundle history; no Redis reads",
+  "latency_scope": "in-process strategy only; excludes HTTP and Redis",
+  "measured_at": "2026-11-24T08:55:43",
+  "multistage": {
+    "hit_rate": 0.5245146839223495,
+    "ndcg": 0.08042804110554626,
+    "coverage": 0.21038,
+    "purchase_hit_rate": 0.21502347417840376,
+    "purchase_ndcg": 0.07122776982235302,
+    "latency_p95_ms": 60.3918749998229,
+    "passed": {
+      "hit_rate": true,
+      "ndcg": true,
+      "coverage": true
+    },
+    "lift_vs_two_tower_only": {
+      "hit_rate": 0.10167276529012037,
+      "ndcg": 0.4528354149342344,
+      "coverage": 7.545085296506906
+    },
+    "lift_vs_popularity": {
+      "hit_rate": 0.555350553505535,
+      "ndcg": 1.6443070433358185,
+      "coverage": 209.38
+    }
+  },
+  "two_tower_ranking": {
+    "hit_rate": 0.42421602787456447,
+    "ndcg": 0.04331144211561004,
+    "coverage": 0.05914,
+    "purchase_hit_rate": 0.14647887323943662,
+    "purchase_ndcg": 0.03726140190280407,
+    "latency_p95_ms": 15.476489999855403,
+    "passed": {
+      "hit_rate": true,
+      "ndcg": false,
+      "coverage": false
+    },
+    "lift_vs_two_tower_only": {
+      "hit_rate": -0.10899111343439627,
+      "ndcg": -0.21763111332207785,
+      "coverage": 1.4021121039805036
+    },
+    "lift_vs_popularity": {
+      "hit_rate": 0.2579335793357933,
+      "ndcg": 0.42399031319241476,
+      "coverage": 58.13999999999999
+    }
+  },
+  "two_tower_only": {
+    "hit_rate": 0.4761075161772026,
+    "ndcg": 0.05535936161714987,
+    "coverage": 0.02462,
+    "purchase_hit_rate": 0.1784037558685446,
+    "purchase_ndcg": 0.0471543270832312,
+    "latency_p95_ms": 6.709291750667035,
+    "passed": {
+      "hit_rate": true,
+      "ndcg": false,
+      "coverage": false
+    }
+  },
+  "popularity": {
+    "hit_rate": 0.33723245395719265,
+    "ndcg": 0.030415545467097318,
+    "coverage": 0.001,
+    "purchase_hit_rate": 0.10516431924882629,
+    "purchase_ndcg": 0.024273734505039408,
+    "latency_p95_ms": 1.0648435004441126,
+    "passed": {
+      "hit_rate": true,
+      "ndcg": false,
+      "coverage": false
+    }
+  }
+}
